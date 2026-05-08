@@ -188,6 +188,26 @@ function encodeFile(file: File): Promise<{ base64: string; mimeType: string }> {
   });
 }
 
+// ─── Resolve cell references ──────────────────────────────────────────────────
+
+function resolveCellRefs(text: string, cells: Record<string, Cell>): string {
+  const pattern = /\[Cell ([^\]]+)\]/g;
+  let resolved = text;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const cellId = match[1];
+    const cell = cells[cellId];
+    if (cell) {
+      const context =
+        `[Referenced Cell]\nPrompt: ${cell.promptText ?? "(unknown)"}\nResponse: ${cell.response}\n---\n`;
+      resolved = resolved.replace(match[0], context);
+    }
+  }
+
+  return resolved;
+}
+
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 const vscode = acquireVsCodeApi();
@@ -274,6 +294,14 @@ export default function App() {
 
     if (blocks.length === 0) return;
 
+    // ── Resolve cell references ───────────────────────────────────────────
+    blocks = blocks.map(block => {
+      if (block.type === "text" && block.text.includes("[Cell ")) {
+        return { ...block, text: resolveCellRefs(block.text, cells) };
+      }
+      return block;
+    });
+
     vscode.postMessage({
       type: "RUN_REQUESTED",
       blocks,
@@ -281,7 +309,6 @@ export default function App() {
       discussionId: explorer.activeDiscussionId,
     });
 
-    const isTutorial = explorer.activeDiscussionId?.startsWith("discussion-tutorial-");
     el.focus();
   }
 
@@ -556,6 +583,14 @@ export default function App() {
               <div><span style={{ color: "#888" }}>Model{"   "}</span>{node.label ?? "—"}</div>
               <div><span style={{ color: "#888" }}>Time{"    "}</span>{node.timestamp ? new Date(node.timestamp).toLocaleTimeString() : "—"}</div>
               <div><span style={{ color: "#888" }}>Latency{"  "}</span>{node.elapsedMs !== undefined ? `${(node.elapsedMs / 1000).toFixed(1)}s` : "—"}</div>
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => navigator.clipboard.writeText(`[Cell ${node.id}]`)}
+                  style={{ fontSize: "0.85em", padding: "2px 10px" }}
+                >
+                  Copy Ref
+                </button>
+              </div>
             </div>
           ) : (
             <div
