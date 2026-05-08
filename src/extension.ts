@@ -188,12 +188,16 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
 
+        const notebooksDir = path.join(require("os").homedir(), "Documents", "PACT", "notebooks");
+        if (!fs.existsSync(notebooksDir)) fs.mkdirSync(notebooksDir, { recursive: true });
+
         const saveUri = await vscode.window.showSaveDialog({
           defaultUri: vscode.Uri.file(
             path.join(
               require("os").homedir(),
+              "Documents", "PACT", "notebooks",
               `${data.notebook.name.replace(/\s+/g, "_")}.pact`
-            )
+            ),
           ),
           filters: { "PACT Notebook": ["pact"] },
         });
