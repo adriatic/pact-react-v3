@@ -119,6 +119,8 @@ export class NotebookStore {
       elapsedMs: 0,
       label: r.cell_type === "tutorial" ? r.prompt_id : undefined,
       promptText: r.prompt_text,
+      model: r.model,
+      timestamp: r.created_at,
     }));
   }
 
@@ -154,6 +156,11 @@ export class NotebookStore {
   `).run(notebookId);
     db.prepare("DELETE FROM discussions WHERE notebook_id = ?").run(notebookId);
     db.prepare("DELETE FROM notebooks WHERE id = ?").run(notebookId);
+  }
+
+  clearResponses(discussionId: string): void {
+    const db = getDb(this.extensionPath);
+    db.prepare("DELETE FROM responses WHERE discussion_id = ?").run(discussionId);
   }
 
   addTime(discussionId: string, elapsedMs: number): void {
@@ -236,7 +243,6 @@ export class NotebookStore {
   importNotebook(data: PactExport): Notebook {
     const db = getDb(this.extensionPath);
 
-    // Create notebook with new ID
     const notebookId = `notebook-${Date.now()}`;
     const createdAt = Date.now();
 
@@ -245,7 +251,6 @@ export class NotebookStore {
       VALUES (?, ?, 0, ?, ?)
     `).run(notebookId, data.notebook.name, createdAt, data.notebook.systemPrompt ?? null);
 
-    // Map old discussion IDs to new ones
     const discussionIdMap: Record<string, string> = {};
     for (const d of data.discussions) {
       const newId = `discussion-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -257,14 +262,12 @@ export class NotebookStore {
       `).run(newId, notebookId, d.name, d.createdAt, d.totalTimeMs);
     }
 
-    // Map old cell IDs to new ones, re-generate to avoid collisions
     const cellIdMap: Record<string, string> = {};
     for (const c of data.cells) {
       const newCellId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       cellIdMap[c.id] = newCellId;
     }
 
-    // Insert cells with remapped IDs
     for (const c of data.cells) {
       const newCellId = cellIdMap[c.id];
       const newDiscussionId = discussionIdMap[c.discussionId] ?? null;

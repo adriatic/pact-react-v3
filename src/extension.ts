@@ -174,6 +174,11 @@ export function activate(context: vscode.ExtensionContext) {
         panel.webview.postMessage({ type: "notebookDeleted", notebookId: message.notebookId });
       }
 
+      if (message.type === "CLEAR_RESPONSES") {
+        notebookStore.clearResponses(message.discussionId);
+        panel.webview.postMessage({ type: "responsesCleared" });
+      }
+
       // ── Export ────────────────────────────────────────────────────────────
 
       if (message.type === "EXPORT_NOTEBOOK") {

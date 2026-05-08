@@ -13,6 +13,7 @@ type CellEvent =
   | { type: "cellCompleted"; cellId: string; elapsedMs: number }
   | { type: "discussionCellsLoaded"; cells: Cell[] }
   | { type: "discussionDeleted"; discussionId: string }
+  | { type: "responsesCleared" }
   | { type: "cellError"; cellId: string; error: string };
 
 type Cell = {
@@ -198,6 +199,7 @@ export default function App() {
   const [modelOpen, setModelOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [showClearResponsesConfirm, setShowClearResponsesConfirm] = useState(false);
 
   // Diff state
   const [diffMode, setDiffMode] = useState(false);
@@ -225,6 +227,14 @@ export default function App() {
   function clearView() {
     setCells({});
     if (composerRef.current) composerRef.current.innerHTML = "";
+  }
+
+  function clearResponses() {
+    vscode.postMessage({
+      type: "CLEAR_RESPONSES",
+      discussionId: explorer.activeDiscussionId,
+    });
+    setShowClearResponsesConfirm(false);
   }
 
   function closeDiff() {
@@ -433,6 +443,10 @@ export default function App() {
         case "discussionDeleted":
           setCells({});
           if (composerRef.current) composerRef.current.innerHTML = "";
+          break;
+
+        case "responsesCleared":
+          setCells({});
           break;
 
         case "cellError":
@@ -715,6 +729,63 @@ export default function App() {
         }
       `}</style>
 
+      {/* ── Warning popup ── */}
+      {showClearResponsesConfirm && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 100,
+        }}>
+          <div style={{
+            background: "#2d2d2d",
+            border: "1px solid #555",
+            borderRadius: 6,
+            padding: 24,
+            maxWidth: 360,
+            width: "90%",
+          }}>
+            <div style={{ marginBottom: 16, lineHeight: 1.6, color: "#d4d4d4" }}>
+              This will permanently delete all responses in this discussion.
+              The prompt will be kept. This cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowClearResponsesConfirm(false)}
+                style={{
+                  background: "none",
+                  border: "1px solid #555",
+                  borderRadius: 4,
+                  color: "#888",
+                  cursor: "pointer",
+                  padding: "4px 16px",
+                  fontSize: "0.9em",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={clearResponses}
+                style={{
+                  background: "#c0392b",
+                  border: "none",
+                  borderRadius: 4,
+                  color: "#fff",
+                  cursor: "pointer",
+                  padding: "4px 16px",
+                  fontSize: "0.9em",
+                }}
+              >
+                Clear Responses
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!collapsed && (
         <div style={{ width: explorerWidth, flexShrink: 0, overflow: "hidden" }}>
           <Explorer
@@ -787,6 +858,23 @@ export default function App() {
           >
             Clear
           </button>
+          {explorer.activeDiscussionId && (
+            <button
+              onClick={() => setShowClearResponsesConfirm(true)}
+              title="Delete all responses for this discussion"
+              style={{
+                background: "none",
+                border: "1px solid #555",
+                borderRadius: 4,
+                color: "#888",
+                cursor: "pointer",
+                padding: "2px 10px",
+                fontSize: "0.85em",
+              }}
+            >
+              Clear Responses
+            </button>
+          )}
           {diffMode && (
             <button
               onClick={() => { setDiffMode(false); setDiffCellA(null); }}
