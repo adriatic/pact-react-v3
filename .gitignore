@@ -10,3 +10,4 @@ project/
 *.tsbuildinfo
 beta-keys-*.json
 config.dev.json
+betas/

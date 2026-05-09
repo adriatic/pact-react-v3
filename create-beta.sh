@@ -56,11 +56,16 @@ vsce package \
   --allow-star-activation \
   --out "$VSIX_NAME"
 
+# ── Move to betas folder ──────────────────────────────────────────────────────
+mkdir -p betas
+mv "$VSIX_NAME" betas/
+echo "Moved to betas/$VSIX_NAME"
+
 # ── Restore dev config ────────────────────────────────────────────────────────
 mv config.dev.json config.json
 echo "Development config restored"
 
 echo ""
-echo "✓ Done: $VSIX_NAME"
+echo "✓ Done: betas/$VSIX_NAME"
 echo "  Tester: $NAME <$EMAIL>"
 echo "  Keys:   $KEYS_FILE"
