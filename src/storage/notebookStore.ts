@@ -65,15 +65,15 @@ export class NotebookStore {
     }));
   }
 
-  createNotebook(name: string): Notebook {
+  createNotebook(name: string, systemPrompt: string | null = null): Notebook {
     const db = getDb(this.extensionPath);
     const id = `notebook-${Date.now()}`;
     const createdAt = Date.now();
 
     db.prepare(`
-      INSERT INTO notebooks (id, name, is_system, created_at)
-      VALUES (?, ?, 0, ?)
-    `).run(id, name, createdAt);
+    INSERT INTO notebooks (id, name, is_system, created_at, system_prompt)
+    VALUES (?, ?, 0, ?, ?)
+  `).run(id, name, createdAt, systemPrompt);
 
     return { id, name, isSystem: false, createdAt };
   }

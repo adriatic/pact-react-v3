@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       if (message.type === "CREATE_NOTEBOOK") {
-        const notebook = notebookStore.createNotebook(message.name);
+        const notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null);
         panel.webview.postMessage({ type: "notebookCreated", notebook });
       }
 

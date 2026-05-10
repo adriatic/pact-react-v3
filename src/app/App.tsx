@@ -223,6 +223,7 @@ export default function App() {
   const [showClearResponsesConfirm, setShowClearResponsesConfirm] = useState(false);
   const [showNewNotebookDialog, setShowNewNotebookDialog] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState("");
+  const [newNotebookSystemPrompt, setNewNotebookSystemPrompt] = useState("");
 
   // Diff state
   const [diffMode, setDiffMode] = useState(false);
@@ -264,8 +265,12 @@ export default function App() {
 
   function submitNewNotebook() {
     const name = newNotebookName.trim();
-    if (name) explorer.createNotebook(name);
+    if (name) {
+      const systemPrompt = newNotebookSystemPrompt.trim() || null;
+      vscode.postMessage({ type: "CREATE_NOTEBOOK", name, systemPrompt });
+    }
     setNewNotebookName("");
+    setNewNotebookSystemPrompt("");
     setShowNewNotebookDialog(false);
   }
 
@@ -865,29 +870,44 @@ export default function App() {
         }}>
           <div style={{
             background: "#2d2d2d", border: "1px solid #555", borderRadius: 6,
-            padding: 24, maxWidth: 360, width: "90%",
+            padding: 24, maxWidth: 480, width: "90%",
           }}>
-            <div style={{ marginBottom: 12, color: "#d4d4d4", fontSize: "0.95em" }}>
+            <div style={{ marginBottom: 12, color: "#d4d4d4", fontSize: "0.95em", fontWeight: "bold" }}>
               New Notebook
             </div>
+            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>Name</div>
             <input
               ref={newNotebookInputRef}
               value={newNotebookName}
               onChange={e => setNewNotebookName(e.target.value)}
               onKeyDown={e => {
-                if (e.key === "Enter") submitNewNotebook();
-                if (e.key === "Escape") { setShowNewNotebookDialog(false); setNewNotebookName(""); }
+                if (e.key === "Escape") { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); }
               }}
               placeholder="Notebook name..."
               style={{
                 width: "100%", background: "#1e1e1e", border: "1px solid #555",
                 borderRadius: 4, color: "#d4d4d4", padding: "6px 10px",
+                fontSize: "0.9em", marginBottom: 14, boxSizing: "border-box",
+              }}
+            />
+            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+              System Prompt <span style={{ color: "#555" }}>(optional — sets the AI's role and context for all discussions in this notebook)</span>
+            </div>
+            <textarea
+              value={newNotebookSystemPrompt}
+              onChange={e => setNewNotebookSystemPrompt(e.target.value)}
+              placeholder="e.g. You are a clinical pharmacist specializing in drug interactions. Always structure responses with severity ratings."
+              rows={5}
+              style={{
+                width: "100%", background: "#1e1e1e", border: "1px solid #555",
+                borderRadius: 4, color: "#d4d4d4", padding: "6px 10px",
                 fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box",
+                resize: "vertical", fontFamily: "monospace", lineHeight: 1.5,
               }}
             />
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
-                onClick={() => { setShowNewNotebookDialog(false); setNewNotebookName(""); }}
+                onClick={() => { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); }}
                 style={{
                   background: "none", border: "1px solid #555", borderRadius: 4,
                   color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em",
