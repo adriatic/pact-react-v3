@@ -543,12 +543,11 @@ export default function App() {
 
   useEffect(() => {
     setCells({});
-    if (composerRef.current) composerRef.current.innerHTML = "";
-    if (explorer.activeDiscussionId) {
-      vscode.postMessage({
-        type: "GET_DRAFT",
-        discussionId: explorer.activeDiscussionId,
-      });
+    if (!explorer.activeDiscussionId?.startsWith("discussion-tutorial-")) {
+      if (composerRef.current) composerRef.current.innerHTML = "";
+      if (explorer.activeDiscussionId) {
+        vscode.postMessage({ type: "GET_DRAFT", discussionId: explorer.activeDiscussionId });
+      }
     }
   }, [explorer.activeDiscussionId]);
 
