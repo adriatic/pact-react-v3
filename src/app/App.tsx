@@ -681,12 +681,13 @@ export default function App() {
             </div>
           )}
 
-          {node.status === "done" && !diffMode && !isRaw && (
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <button onClick={() => retry(node.id)}>Retry</button>
-              <button onClick={() => startDiff(node.id)}>Diff</button>
-            </div>
-          )}
+          {node.status === "done" && !diffMode && !isRaw &&
+            !explorer.activeDiscussionId?.startsWith("discussion-tutorial-") && (
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button onClick={() => retry(node.id)}>Retry</button>
+                <button onClick={() => startDiff(node.id)}>Diff</button>
+              </div>
+            )}
 
           {isDiffA && (
             <div style={{ marginTop: 6, fontSize: "0.8em", color: "#0e639c" }}>
