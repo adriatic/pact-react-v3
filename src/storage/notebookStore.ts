@@ -117,7 +117,7 @@ export class NotebookStore {
       response: r.response,
       status: "done",
       elapsedMs: 0,
-      label: r.cell_type === "tutorial" ? r.prompt_id : undefined,
+      label: r.cell_type === "tutorial" ? r.prompt_id : r.model === "claude" ? "Claude" : "GPT",
       promptText: r.prompt_text,
       model: r.model,
       timestamp: r.created_at,

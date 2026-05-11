@@ -193,7 +193,7 @@ export default function Explorer({
                                                         {time}
                                                     </span>
                                                 )}
-                                                {hoveredId === discussion.id && !notebook.isSystem && (
+                                                {hoveredId === discussion.id && (!notebook.isSystem || notebook.id === "notebook-drafts") && (
                                                     <span
                                                         onClick={e => {
                                                             e.stopPropagation();

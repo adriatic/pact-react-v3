@@ -67,7 +67,8 @@ export function useExplorer(vscode: any) {
 
     function selectDiscussion(discussion: Discussion) {
         setActiveDiscussionId(discussion.id);
-        if (!discussion.id.startsWith("discussion-tutorial-")) {
+        if (!discussion.id.startsWith("discussion-tutorial-") &&
+            !discussion.id.startsWith("draft-")) {
             vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: discussion.id });
         }
     }
