@@ -189,25 +189,6 @@ function encodeFile(file: File): Promise<{ base64: string; mimeType: string }> {
   });
 }
 
-// ─── Resolve cell references ──────────────────────────────────────────────────
-
-function resolveCellRefs(text: string, cells: Record<string, Cell>): string {
-  const pattern = /\[Cell ([^\]]+)\]/g;
-  let resolved = text;
-  let match;
-
-  while ((match = pattern.exec(text)) !== null) {
-    const cellId = match[1];
-    const cell = cells[cellId];
-    if (cell) {
-      const context =
-        `[Referenced Cell]\nPrompt: ${cell.promptText ?? "(unknown)"}\nResponse: ${cell.response}\n---\n`;
-      resolved = resolved.replace(match[0], context);
-    }
-  }
-
-  return resolved;
-}
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -329,13 +310,6 @@ export default function App() {
     }
 
     if (blocks.length === 0) return;
-
-    blocks = blocks.map(block => {
-      if (block.type === "text" && block.text.includes("[Cell ")) {
-        return { ...block, text: resolveCellRefs(block.text, cells) };
-      }
-      return block;
-    });
 
     // Delete draft on send
     if (explorer.activeDiscussionId) {

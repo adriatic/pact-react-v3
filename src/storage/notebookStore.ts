@@ -124,6 +124,16 @@ export class NotebookStore {
     }));
   }
 
+  getCellById(cellId: string): { promptText: string; response: string } | null {
+    const db = getDb(this.extensionPath);
+    const row = db
+      .prepare("SELECT prompt_text, response FROM responses WHERE prompt_id = ?")
+      .get(cellId) as { prompt_text: string; response: string } | undefined;
+
+    if (!row) return null;
+    return { promptText: row.prompt_text, response: row.response };
+  }
+
   createDiscussion(
     notebookId: string,
     name: string,

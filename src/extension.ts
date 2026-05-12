@@ -101,6 +101,16 @@ export function activate(context: vscode.ExtensionContext) {
     return { text: raw, cellType: "user" };
   }
 
+  function resolveCellRefs(text: string): string {
+    return text.replace(/\[Cell ([^\]]+)\]/g, (match, cellId) => {
+      const cell = notebookStore.getCellById(cellId.trim());
+      if (cell) {
+        return `[Referenced Cell]\nPrompt: ${cell.promptText}\nResponse: ${cell.response}\n---\n`;
+      }
+      return match;
+    });
+  }
+
   panel.webview.onDidReceiveMessage(async (message) => {
 
     try {
@@ -111,7 +121,7 @@ export function activate(context: vscode.ExtensionContext) {
         const model = message.model ?? "gpt";
         const discussionId = message.discussionId ?? "discussion-default";
 
-        const firstText = blocks.find((b) => b.type === "text")?.text?.trim() ?? "";
+        const firstText = resolveCellRefs(blocks.find((b) => b.type === "text")?.text?.trim() ?? "");
         const { text, label, cellType, promptId } = resolvePrompt(firstText);
 
         if (cellType === "tutorial") {
