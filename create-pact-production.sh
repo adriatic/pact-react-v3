@@ -24,6 +24,7 @@ rsync -av \
   --exclude='host/' \
   --exclude='betas/' \
   --exclude='pact.code-workspace' \
+  --exclude='config.dev.json' \
   "$SRC/" "$DEST/"
 
 echo ""
