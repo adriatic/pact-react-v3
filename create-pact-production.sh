@@ -8,6 +8,12 @@ set -e
 SRC="$HOME/Work/pact-react-v2"
 DEST="$HOME/Work/pact-production"
 
+# Back up existing pact-data if present
+if [ -d "$DEST/pact-data" ]; then
+    echo "Backing up pact-data..."
+    cp -r "$DEST/pact-data" /tmp/pact-production-data-backup
+fi
+
 echo "Removing existing pact-production..."
 rm -rf "$DEST"
 
@@ -26,7 +32,13 @@ rsync -av \
   --exclude='pact.code-workspace' \
   --exclude='config.dev.json' \
   "$SRC/" "$DEST/"
-
+  
+# Restore pact-data if backed up
+if [ -d /tmp/pact-production-data-backup ]; then
+    echo "Restoring pact-data..."
+    cp -r /tmp/pact-production-data-backup "$DEST/pact-data"
+    rm -rf /tmp/pact-production-data-backup
+fi
 echo ""
 echo "Done. pact-production is ready to build."
 echo "Next: cd $DEST && npm install && npm run build"
