@@ -1,4 +1,4 @@
-// Copyright © 2026 Pact Research LLC. All rights reserved.\n// pactresearch.net
+// Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net
 // src/llm.ts
 
 type StreamLLMOptions = {

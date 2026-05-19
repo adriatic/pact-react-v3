@@ -1,5 +1,7 @@
-// Copyright © 2026 Pact Research LLC. All rights reserved.\n// pactresearch.net
+// Copyright © 2026 PACTResearch.net. All rights reserved.
 import { getDb } from "./db";
+
+const SIGN_SERVER = process.env.PACT_SIGN_SERVER ?? "https://sign.pactresearch.net";
 
 export type Notebook = {
   id: string;
@@ -40,6 +42,19 @@ export type PactExport = {
     cellType: string;
     createdAt: number;
   }[];
+};
+
+export type SignedPactExport = {
+  version: number;
+  signedAt: number;
+  signer: string;
+  signature: string;
+  payload: PactExport;
+};
+
+export type VerifyResult = {
+  valid: boolean;
+  reason: string | null;
 };
 
 export class NotebookStore {
@@ -180,7 +195,6 @@ export class NotebookStore {
     const db = getDb(this.extensionPath);
     const draftId = `draft-${discussionId}`;
 
-    // Ensure a discussion record exists in the Drafts notebook for this discussion
     const existing = db
       .prepare("SELECT id FROM discussions WHERE id = ?")
       .get(draftId) as { id: string } | undefined;
@@ -192,7 +206,6 @@ export class NotebookStore {
       `).run(draftId, discussionId, Date.now());
     }
 
-    // Upsert the draft response record
     db.prepare(`
       INSERT OR REPLACE INTO responses
         (prompt_id, prompt_text, response, model, cell_type, created_at, discussion_id, parent_id)
@@ -242,7 +255,7 @@ export class NotebookStore {
     return row?.system_prompt ?? null;
   }
 
-  // ── Export ────────────────────────────────────────────────────────────────
+  // ── Export (unsigned) ────────────────────────────────────────────────────
 
   exportNotebook(notebookId: string): PactExport | null {
     const db = getDb(this.extensionPath);
@@ -293,7 +306,52 @@ export class NotebookStore {
     };
   }
 
-  // ── Import ────────────────────────────────────────────────────────────────
+  // ── Export (signed) ──────────────────────────────────────────────────────
+
+  async exportNotebookSigned(notebookId: string): Promise<SignedPactExport | null> {
+    const pactExport = this.exportNotebook(notebookId);
+    if (!pactExport) return null;
+
+    try {
+      const response = await fetch(`${SIGN_SERVER}/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pactExport),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sign server responded with ${response.status}`);
+      }
+
+      return response.json() as Promise<SignedPactExport>;
+    } catch (e: any) {
+      console.error("Failed to sign notebook:", e.message);
+      throw new Error(`Notebook signing failed: ${e.message}`);
+    }
+  }
+
+  // ── Verify signature ─────────────────────────────────────────────────────
+
+  async verifySignature(signed: SignedPactExport): Promise<VerifyResult> {
+    try {
+      const response = await fetch(`${SIGN_SERVER}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signed),
+      });
+
+      if (!response.ok) {
+        return { valid: false, reason: `Verify server responded with ${response.status}` };
+      }
+
+      return response.json() as Promise<VerifyResult>;
+    } catch (e: any) {
+      console.error("Failed to verify notebook:", e.message);
+      return { valid: false, reason: `Verification failed: ${e.message}` };
+    }
+  }
+
+  // ── Import (unsigned — internal use only) ────────────────────────────────
 
   importNotebook(data: PactExport): Notebook {
     const db = getDb(this.extensionPath);
@@ -351,5 +409,19 @@ export class NotebookStore {
       isSystem: false,
       createdAt,
     };
+  }
+
+  // ── Import (signed — verifies before importing) ──────────────────────────
+
+  async importNotebookSigned(data: SignedPactExport): Promise<Notebook> {
+    const result = await this.verifySignature(data);
+
+    if (!result.valid) {
+      throw new Error(
+        `Cannot import notebook: ${result.reason ?? "signature verification failed"}`
+      );
+    }
+
+    return this.importNotebook(data.payload);
   }
 }

@@ -1,4 +1,4 @@
-// Copyright © 2026 Pact Research LLC. All rights reserved.\n// pactresearch.net
+// Copyright © 2026 PACTResearch.net. All rights reserved.
 import { useEffect, useState } from "react";
 import type { Notebook, Discussion } from "./Explorer";
 
@@ -52,8 +52,18 @@ export function useExplorer(vscode: any) {
                     break;
 
                 case "notebookDeleted":
+                    setDiscussions(prev => {
+                        const remaining = prev.filter(d => d.notebookId !== data.notebookId);
+                        // If active discussion belonged to deleted notebook, clear it
+                        setActiveDiscussionId(active => {
+                            const activeWasInNotebook = prev.some(
+                                d => d.id === active && d.notebookId === data.notebookId
+                            );
+                            return activeWasInNotebook ? null : active;
+                        });
+                        return remaining;
+                    });
                     setNotebooks(prev => prev.filter(n => n.id !== data.notebookId));
-                    setDiscussions(prev => prev.filter(d => d.notebookId !== data.notebookId));
                     break;
 
                 case "discussionsImported":

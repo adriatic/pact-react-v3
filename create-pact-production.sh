@@ -31,6 +31,7 @@ rsync -av \
   --exclude='betas/' \
   --exclude='pact.code-workspace' \
   --exclude='config.dev.json' \
+  --exclude='Signing_Server/' \
   "$SRC/" "$DEST/"
   
 # Restore pact-data if backed up

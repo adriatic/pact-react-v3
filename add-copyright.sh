@@ -3,8 +3,8 @@
 # Adds copyright header to all .ts, .tsx, and .py source files
 # Skips files that already have the header, node_modules, out/, and .d.ts files
 
-COPYRIGHT_TS="// Copyright © 2026 Pact Research LLC. All rights reserved.\n// pactresearch.net"
-COPYRIGHT_PY="# Copyright © 2026 Pact Research LLC. All rights reserved.\n# pactresearch.net"
+COPYRIGHT_TS="// Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net"
+COPYRIGHT_PY="# Copyright © 2026 PACTResearch.net. All rights reserved.\n# pactresearch.net"
 
 SKIPPED=0
 UPDATED=0
@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 
 # Find all .ts and .tsx files, excluding node_modules, out/, and .d.ts
 while IFS= read -r -d '' file; do
-    if grep -q "Copyright © 2026 Pact Research LLC" "$file"; then
+    if grep -q "Copyright © 2026 PACTResearch.net" "$file"; then
         SKIPPED=$((SKIPPED + 1))
         continue
     fi

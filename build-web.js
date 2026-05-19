@@ -1,4 +1,5 @@
 // build-web.js
+// Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net
 
 const esbuild = require("esbuild");
 

@@ -1,4 +1,4 @@
-// Copyright © 2026 Pact Research LLC. All rights reserved.\n// pactresearch.net
+// Copyright © 2026 PACTResearch.net. All rights reserved.
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
@@ -203,7 +203,7 @@ export function activate(context: vscode.ExtensionContext) {
         notebookStore.deleteDraft(message.discussionId);
       }
 
-      // ── Export ────────────────────────────────────────────────────────────
+      // ── Export (signed) ──────────────────────────────────────────────────
 
       if (message.type === "EXPORT_NOTEBOOK") {
         const data = notebookStore.exportNotebook(message.notebookId);
@@ -235,13 +235,35 @@ export function activate(context: vscode.ExtensionContext) {
 
         if (!saveUri) return;
 
-        fs.writeFileSync(saveUri.fsPath, JSON.stringify(data, null, 2), "utf-8");
-        vscode.window.showInformationMessage(
-          `PACT: "${data.notebook.name}" exported successfully.`
-        );
+        // Sign the notebook before saving
+        try {
+          vscode.window.showInformationMessage("PACT: signing notebook...");
+          const signed = await notebookStore.exportNotebookSigned(message.notebookId);
+          if (!signed) {
+            vscode.window.showErrorMessage("PACT: failed to sign notebook.");
+            return;
+          }
+          fs.writeFileSync(saveUri.fsPath, JSON.stringify(signed, null, 2), "utf-8");
+          vscode.window.showInformationMessage(
+            `PACT: "${data.notebook.name}" exported and signed successfully.`
+          );
+        } catch (signErr: any) {
+          // If signing server is unreachable, offer unsigned export as fallback
+          const choice = await vscode.window.showWarningMessage(
+            `PACT: signing server unavailable — ${signErr.message}. Export without signature?`,
+            "Export unsigned",
+            "Cancel"
+          );
+          if (choice === "Export unsigned") {
+            fs.writeFileSync(saveUri.fsPath, JSON.stringify(data, null, 2), "utf-8");
+            vscode.window.showWarningMessage(
+              `PACT: "${data.notebook.name}" exported WITHOUT signature.`
+            );
+          }
+        }
       }
 
-      // ── Import ────────────────────────────────────────────────────────────
+      // ── Import (verifies signature) ──────────────────────────────────────
 
       if (message.type === "IMPORT_NOTEBOOK") {
         const openUris = await vscode.window.showOpenDialog({
@@ -255,19 +277,52 @@ export function activate(context: vscode.ExtensionContext) {
         const raw = fs.readFileSync(openUris[0].fsPath, "utf-8");
         const data = JSON.parse(raw);
 
-        if (!data.version || !data.notebook || !data.discussions || !data.cells) {
+        // Detect signed vs unsigned format
+        const isSigned = data.signature && data.payload && data.signer;
+        const isLegacy = data.version && data.notebook && data.discussions && data.cells;
+
+        if (!isSigned && !isLegacy) {
           vscode.window.showErrorMessage("PACT: invalid .pact file.");
           return;
         }
 
-        const notebook = notebookStore.importNotebook(data);
-        const discussions = notebookStore.getDiscussionsForNotebook(notebook.id);
+        let notebook;
+        let discussions;
 
-        panel.webview.postMessage({ type: "notebookCreated", notebook });
+        if (isSigned) {
+          // Verify signature before importing
+          try {
+            vscode.window.showInformationMessage("PACT: verifying notebook signature...");
+            notebook = await notebookStore.importNotebookSigned(data);
+          } catch (verifyErr: any) {
+            vscode.window.showErrorMessage(
+              `PACT: import rejected — ${verifyErr.message}`
+            );
+            return;
+          }
+        } else {
+          // Legacy unsigned notebook — warn but allow
+          const choice = await vscode.window.showWarningMessage(
+            "PACT: this notebook has no signature and cannot be verified. Import anyway?",
+            "Import unsigned",
+            "Cancel"
+          );
+          if (choice !== "Import unsigned") return;
+          notebook = notebookStore.importNotebook(data);
+        }
+
+        discussions = notebookStore.getDiscussionsForNotebook(notebook.id);
+
+        // Reload the full explorer so the imported notebook appears
+        const notebooks = notebookStore.getAllNotebooks();
+        const allDiscussions = notebooks.flatMap(nb =>
+          notebookStore.getDiscussionsForNotebook(nb.id)
+        );
+
         panel.webview.postMessage({
-          type: "discussionsImported",
-          notebookId: notebook.id,
-          discussions,
+          type: "notebooksLoaded",
+          notebooks,
+          discussions: allDiscussions,
         });
 
         vscode.window.showInformationMessage(

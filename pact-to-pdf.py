@@ -18,7 +18,11 @@ from reportlab.pdfgen import canvas as rl_canvas
 
 def load_pact(path):
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    # Handle signed format — unwrap payload
+    if "payload" in data and "signature" in data:
+        return data["payload"]
+    return data
 
 def format_timestamp(ms):
     try:
