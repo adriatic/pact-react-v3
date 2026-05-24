@@ -51,7 +51,7 @@ export class ExecutionEngine {
     return null;
   }
 
-  async runPrompt(
+async runPrompt(
     prompt: string,
     parentId?: string,
     label?: string,
@@ -61,6 +61,7 @@ export class ExecutionEngine {
     model: LLMModel = "gpt",
     discussionId: string = "discussion-default",
     userSystemPrompt: string = "",
+    resolvedModel?: string,
   ) {
     if (this.isRunning) {
       eventBus.emit({
@@ -114,10 +115,10 @@ export class ExecutionEngine {
           }
         } else {
           let full = "";
-          await this.router.run(model, prompt, (token) => {
+await this.router.run(model, prompt, (token) => {
             full += token;
             eventBus.emit({ type: "cellStream", cellId, chunk: token });
-          }, blocks, systemPrompt);
+          }, blocks, systemPrompt, resolvedModel);
 
           const image = blocks.find(b => b.type === "image") as any;
           this.store.save(
@@ -128,10 +129,10 @@ export class ExecutionEngine {
         }
       } else {
         let full = "";
-        await this.router.run(model, prompt, (token) => {
-          full += token;
-          eventBus.emit({ type: "cellStream", cellId, chunk: token });
-        }, blocks, systemPrompt);
+await this.router.run(model, prompt, (token) => {
+            full += token;
+            eventBus.emit({ type: "cellStream", cellId, chunk: token });
+          }, blocks, systemPrompt, resolvedModel); 
 
         const image = blocks.find(b => b.type === "image") as any;
         this.store.save(

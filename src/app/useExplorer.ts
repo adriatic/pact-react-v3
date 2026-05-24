@@ -109,6 +109,10 @@ export function useExplorer(vscode: any) {
         vscode.postMessage({ type: "IMPORT_NOTEBOOK" });
     }
 
+    function exportObsidian(notebookId: string) {
+        vscode.postMessage({ type: "EXPORT_OBSIDIAN", notebookId });
+    }
+
     return {
         notebooks,
         discussions,
@@ -120,5 +124,6 @@ export function useExplorer(vscode: any) {
         deleteNotebook,
         exportNotebook,
         importNotebook,
+        exportObsidian,
     };
 }

@@ -4,7 +4,7 @@ set -e
 # ── Validate argument ─────────────────────────────────────────────────────────
 if [ -z "$1" ]; then
   echo "Usage: ./create-beta.sh <email>"
-  echo "Example: ./create-beta.sh marc.pierson@gmail.com"
+  echo "Example: ./create-beta.sh marpie1@comcast.net"
   exit 1
 fi
 
@@ -49,7 +49,7 @@ echo "Building..."
 npm run build
 
 # ── Package ───────────────────────────────────────────────────────────────────
-VSIX_NAME="pact-${EMAIL_PREFIX}-0.0.1.vsix"
+VSIX_NAME="pact-${EMAIL_PREFIX}-0.0.2.vsix"
 echo "Packaging as $VSIX_NAME..."
 vsce package \
   --allow-missing-repository \

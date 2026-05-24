@@ -1,12 +1,19 @@
 // Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net
 import React, { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
+import Setup, { type SetupData } from "./setup";
 import type { SerializedContentBlock } from "../types/contentBlock";
 import Explorer from "./Explorer";
 import { useExplorer } from "./useExplorer";
 import { corePrompts } from "../prompts/core";
 
 type LLMModel = "gpt" | "claude";
+type Tier = "economy" | "standard";
+
+const MODEL_TIERS: Record<Tier, Record<LLMModel, string>> = {
+  economy: { gpt: "gpt-4.1-mini", claude: "claude-haiku-4-5-20251001" },
+  standard: { gpt: "gpt-4.1", claude: "claude-sonnet-4-6" },
+};
 
 type CellEvent =
   | { type: "cellStarted"; cellId: string; parentId?: string; label?: string; cellType?: string; promptText?: string; model?: string }
@@ -16,7 +23,9 @@ type CellEvent =
   | { type: "discussionDeleted"; discussionId: string }
   | { type: "responsesCleared" }
   | { type: "draftLoaded"; discussionId: string; promptText: string | null }
-  | { type: "cellError"; cellId: string; error: string };
+  | { type: "cellError"; cellId: string; error: string }
+  | { type: "showSetup" }
+  | { type: "setupComplete" };
 
 type Cell = {
   id: string;
@@ -36,6 +45,7 @@ type TreeNode = Cell & {
 };
 
 declare const acquireVsCodeApi: any;
+
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
@@ -209,20 +219,28 @@ function buildShareableMarkdown(node: Cell, discussionName: string): string {
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
-const vscode = acquireVsCodeApi();
-
 export default function App() {
+
+  const vscode = acquireVsCodeApi();
+  console.log("App rendering, acquireVsCodeApi:", typeof acquireVsCodeApi);
+  console.log("vscode:", typeof vscode);
+
+
   const [cells, setCells] = useState<Record<string, Cell>>({});
   const [rawCells, setRawCells] = useState<Record<string, boolean>>({});
   const [copiedCells, setCopiedCells] = useState<Record<string, boolean>>({});
   const [model, setModel] = useState<LLMModel>("gpt");
+  const [tier, setTier] = useState<Tier>("standard");
   const [modelOpen, setModelOpen] = useState(false);
+  const [tierOpen, setTierOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [showClearResponsesConfirm, setShowClearResponsesConfirm] = useState(false);
   const [showNewNotebookDialog, setShowNewNotebookDialog] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookSystemPrompt, setNewNotebookSystemPrompt] = useState("");
+
+  const [showSetup, setShowSetup] = useState(false);
 
   // Diff state
   const [diffMode, setDiffMode] = useState(false);
@@ -355,6 +373,7 @@ export default function App() {
       type: "RUN_REQUESTED",
       blocks,
       model,
+      resolvedModel: MODEL_TIERS[tier][model],
       discussionId: explorer.activeDiscussionId,
     });
 
@@ -463,10 +482,17 @@ export default function App() {
   // ── Messages from extension host ──────────────────────────────────────────
 
   useEffect(() => {
+    vscode.postMessage({ type: "CHECK_CONFIG" });
+    vscode.postMessage({ type: "EXPLORER_LOAD" });
+  }, []);
+
+  useEffect(() => {
     const handler = (event: MessageEvent) => {
+      console.log("PACT message received:", event.data?.type, event.data);
       const data: CellEvent = event.data;
 
       switch (data.type) {
+
         case "cellStarted":
           setIsRunning(true);
           setCells(prev => ({
@@ -537,6 +563,14 @@ export default function App() {
             ...prev,
             [data.cellId]: { ...prev[data.cellId], status: "error", error: data.error },
           }));
+          break;
+
+        case "showSetup":
+          setShowSetup(true);
+          break;
+
+        case "setupComplete":
+          setShowSetup(false);
           break;
       }
     };
@@ -790,7 +824,26 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  if (showSetup) {
+    return (
+      <Setup
+        onSave={(data: SetupData) => {
+          console.log("PACT: onSave called, sending SAVE_CONFIG");
+          vscode.postMessage({
+            type: "SAVE_CONFIG",
+            name: data.name,
+            email: data.email,
+            context: data.context,
+            anthropicApiKey: data.anthropicApiKey,
+            openaiApiKey: data.openaiApiKey,
+          });
+        }}
+      />
+    );
+  }
+
   return (
+
     <div style={{ display: "flex", height: "100vh", fontFamily: "monospace", overflow: "hidden" }}>
 
       <style>{`
@@ -903,6 +956,49 @@ export default function App() {
         </div>
       )}
 
+      {tierOpen && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+        }}>
+          <div style={{
+            background: "#2d2d2d", border: "1px solid #555", borderRadius: 6,
+            padding: 24, maxWidth: 420, width: "90%",
+          }}>
+            <div style={{ marginBottom: 16, color: "#d4d4d4", fontSize: "0.95em", fontWeight: "bold" }}>
+              Select Model Tier
+            </div>
+            {(["standard", "economy"] as Tier[]).map(t => (
+              <div
+                key={t}
+                onClick={() => { setTier(t); setTierOpen(false); }}
+                style={{
+                  border: tier === t ? "1px solid #0e639c" : "1px solid #555",
+                  borderRadius: 5, padding: "12px 16px", marginBottom: 10,
+                  cursor: "pointer", background: tier === t ? "#0e639c18" : "transparent",
+                }}
+              >
+                <div style={{ color: "#d4d4d4", fontWeight: "bold", marginBottom: 4 }}>
+                  {t === "standard" ? "Standard" : "Economy"}
+                </div>
+                <div style={{ color: "#888", fontSize: "0.85em" }}>
+                  GPT — {MODEL_TIERS[t].gpt} &nbsp;·&nbsp; Claude — {MODEL_TIERS[t].claude}
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <button
+                onClick={() => setTierOpen(false)}
+                style={{
+                  background: "none", border: "1px solid #555", borderRadius: 4,
+                  color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em",
+                }}
+              >Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!collapsed && (
         <div style={{ width: explorerWidth, flexShrink: 0, overflow: "hidden" }}>
           <Explorer
@@ -922,6 +1018,7 @@ export default function App() {
             onDeleteNotebook={explorer.deleteNotebook}
             onExportNotebook={explorer.exportNotebook}
             onImportNotebook={explorer.importNotebook}
+            onExportObsidian={explorer.exportObsidian}
           />
         </div>
       )}
@@ -972,7 +1069,16 @@ export default function App() {
                 color: "#e05252", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em",
               }}>Cancel Diff</button>
           )}
-        </div>
+          <button
+            onClick={() => !isRunning && setTierOpen(true)}
+            style={{
+              background: "none", border: "1px solid #555", borderRadius: 4,
+              color: isRunning ? "#444" : "#888",
+              cursor: isRunning ? "default" : "pointer",
+              padding: "2px 10px", fontSize: "0.85em",
+            }}
+          >Model</button>
+          <span style={{ marginLeft: "auto", color: "#555", fontSize: "0.85em" }}>v{(window as any).PACT_VERSION ?? "0.0.3"}</span>        </div>
 
         {/* ── Line 2: context bar ── */}
         <div style={{
@@ -1056,8 +1162,10 @@ export default function App() {
                         background: "none", border: "1px solid #555", borderRadius: 4,
                         color: "#ccc", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em",
                       }}>
-                        {model === "gpt" ? "GPT-4.1" : "Claude"} ▾
-                      </button>
+
+                        {model === "gpt"
+                          ? (tier === "economy" ? "GPT-4.1 mini" : "GPT-4.1")
+                          : (tier === "economy" ? "Haiku" : "Sonnet")} ▾                      </button>
                       {modelOpen && (
                         <div style={{
                           position: "absolute", bottom: "110%", right: 0,

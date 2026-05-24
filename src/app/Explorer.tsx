@@ -27,6 +27,7 @@ type Props = {
     onDeleteDiscussion: (discussionId: string) => void;
     onDeleteNotebook: (notebookId: string) => void;
     onExportNotebook: (notebookId: string) => void;
+    onExportObsidian: (notebookId: string) => void;
     onImportNotebook: () => void;
 };
 
@@ -41,11 +42,12 @@ export default function Explorer({
     onDeleteDiscussion,
     onDeleteNotebook,
     onExportNotebook,
+    onExportObsidian,
 }: Props) {
+    const [exportMenuId, setExportMenuId] = useState<string | null>(null);
     const [expandedNotebooks, setExpandedNotebooks] = useState<Record<string, boolean>>(
         { "notebook-tutorial": true, "notebook-general": true }
     );
-
     const [newDiscussionName, setNewDiscussionName] = useState("");
     const [newDiscussionTarget, setNewDiscussionTarget] = useState<string | null>(null);
 
@@ -125,26 +127,38 @@ export default function Explorer({
                                 <span style={{ flex: 1 }}>{notebook.name}</span>
                                 {hoveredId === notebook.id && !notebook.isSystem && (
                                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                        <span
-                                            onClick={e => {
-                                                e.stopPropagation();
-                                                onExportNotebook(notebook.id);
-                                            }}
-                                            title="Export notebook"
-                                            style={{
-                                                color: "#555", fontSize: "1.1em",
-                                                padding: "0 2px", cursor: "pointer", lineHeight: 1,
-                                            }}
-                                            onMouseEnter={e => (e.currentTarget.style.color = "#4ec94e")}
-                                            onMouseLeave={e => (e.currentTarget.style.color = "#555")}
-                                        >↑</span>
+                                        <div
+                                            style={{ display: "flex", gap: 4, alignItems: "center" }}
+                                            onMouseEnter={e => { e.stopPropagation(); setExportMenuId(notebook.id); }}
+                                            onMouseLeave={e => { e.stopPropagation(); setExportMenuId(null); }}
+                                        >
+                                            {exportMenuId === notebook.id ? (
+                                                <>
+                                                    <span
+                                                        onClick={e => { e.stopPropagation(); onExportNotebook(notebook.id); setExportMenuId(null); }}
+                                                        title="Export as .pact file"
+                                                        style={{ color: "#4ec94e", fontSize: "1.3em", padding: "0 2px", cursor: "pointer", lineHeight: 1 }}
+                                                    >↑.pact</span>
+                                                    <span
+                                                        onClick={e => { e.stopPropagation(); onExportObsidian(notebook.id); setExportMenuId(null); }}
+                                                        title="Export to Obsidian"
+                                                        style={{ color: "#a78bfa", fontSize: "1.3em", padding: "0 2px", cursor: "pointer", lineHeight: 1 }}
+                                                    >↑Ob</span>
+                                                </>
+                                            ) : (
+                                                <span
+                                                    title="Export"
+                                                    style={{ color: "#555", fontSize: "1.4em", padding: "0 2px", cursor: "pointer", lineHeight: 1 }}
+                                                >↑</span>
+                                            )}
+                                        </div>
                                         <span
                                             onClick={e => {
                                                 e.stopPropagation();
                                                 onDeleteNotebook(notebook.id);
                                             }}
                                             style={{
-                                                color: "#777", fontSize: "1.1em",
+                                                color: "#777", fontSize: "1.4em",
                                                 padding: "0 2px", cursor: "pointer", lineHeight: 1,
                                             }}
                                             onMouseEnter={e => (e.currentTarget.style.color = "#e05252")}

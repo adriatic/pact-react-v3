@@ -330,6 +330,37 @@ export class NotebookStore {
     }
   }
 
+  // ── Export to Obsidian ───────────────────────────────────────────────────
+
+  exportNotebookAsMarkdown(notebookId: string): string | null {
+    const data = this.exportNotebook(notebookId);
+    if (!data) return null;
+
+    const lines: string[] = [];
+    lines.push(`# ${data.notebook.name}`);
+    if (data.notebook.systemPrompt) {
+      lines.push(`\n> **System Prompt:** ${data.notebook.systemPrompt}`);
+    }
+    lines.push("");
+
+    for (const discussion of data.discussions) {
+      lines.push(`## ${discussion.name}`);
+      lines.push("");
+
+      const cells = data.cells.filter(c => c.discussionId === discussion.id);
+      for (const cell of cells) {
+        lines.push(`**Prompt:** ${cell.promptText}`);
+        lines.push("");
+        lines.push(`**Response:** ${cell.response}`);
+        lines.push("");
+        lines.push("---");
+        lines.push("");
+      }
+    }
+
+    return lines.join("\n");
+  }
+
   // ── Verify signature ─────────────────────────────────────────────────────
 
   async verifySignature(signed: SignedPactExport): Promise<VerifyResult> {

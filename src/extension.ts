@@ -10,6 +10,10 @@ import { NotebookStore } from "./storage/notebookStore";
 import type { SerializedContentBlock } from "./types/contentBlock";
 
 export function activate(context: vscode.ExtensionContext) {
+  const { version } = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf-8")
+  );
+
   const panel = vscode.window.createWebviewPanel(
     "pact",
     "PACT",
@@ -27,6 +31,7 @@ export function activate(context: vscode.ExtensionContext) {
       path.join(context.extensionPath, "out", "index.js")
     )
   );
+  console.log("PACT scriptUri:", scriptUri.toString());
 
   panel.webview.html = `
     <!DOCTYPE html>
@@ -39,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
             const vscode = acquireVsCodeApi();
             window.vscode = vscode;
             window.acquireVsCodeApi = () => vscode;
+            window.PACT_VERSION = "${version}";
           })();
         </script>
 
@@ -47,14 +53,30 @@ export function activate(context: vscode.ExtensionContext) {
     </html>
   `;
 
+  console.log("PACT: webview HTML set, length:", panel.webview.html.length);
+
   const router = new LLMRouter();
+  // Ensure persistent config directory exists
+  const globalStoragePath = context.globalStorageUri.fsPath;
+  if (!fs.existsSync(globalStoragePath)) {
+    fs.mkdirSync(globalStoragePath, { recursive: true });
+  }
   const notebookStore = new NotebookStore(context.extensionPath);
   let userSystemPrompt: string = "";
 
   function initRouter() {
     try {
-      const configPath = path.join(context.extensionPath, "config.json");
+      const configPath = path.join(context.globalStorageUri.fsPath, "config.json"); if (!fs.existsSync(configPath)) {
+        // No config at all — show setup
+        panel.webview.postMessage({ type: "showSetup" });
+        return;
+      }
       const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (!config.anthropicApiKey && !config.openaiApiKey) {
+        // Config exists but no keys — show setup
+        panel.webview.postMessage({ type: "showSetup" });
+        return;
+      }
       router.setApiKey(config.openaiApiKey);
       router.setClaudeKey(config.anthropicApiKey);
       if (config.user) {
@@ -66,10 +88,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     } catch (err: any) {
       console.error("PACT: failed to load config.json:", err.message);
+      panel.webview.postMessage({ type: "showSetup" });
     }
   }
-
-  initRouter();
 
   const engine = new ExecutionEngine(router, context.extensionPath);
 
@@ -113,6 +134,40 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   panel.webview.onDidReceiveMessage(async (message) => {
+    console.log("PACT: CHECK_CONFIG received");
+    const configPath = path.join(context.globalStorageUri.fsPath, "config.json");
+    if (message.type === "CHECK_CONFIG") {
+      const needsSetup = !fs.existsSync(configPath) || (() => {
+        try {
+          const c = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+          return !c.anthropicApiKey?.trim() && !c.openaiApiKey?.trim();
+        } catch { return true; }
+      })();
+
+      if (needsSetup) {
+        panel.webview.postMessage({ type: "showSetup" });
+      } else {
+        initRouter();
+        panel.webview.postMessage({ type: "setupComplete" });
+      }
+      return;
+    }
+
+    if (message.type === "SAVE_CONFIG") {
+      const configPath = path.join(context.globalStorageUri.fsPath, "config.json"); const config = {
+        user: {
+          name: message.name ?? "",
+          email: message.email ?? "",
+          context: message.context ?? "",
+        },
+        anthropicApiKey: message.anthropicApiKey ?? "",
+        openaiApiKey: message.openaiApiKey ?? "",
+      };
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+      initRouter();
+      panel.webview.postMessage({ type: "setupComplete" });
+      return;
+    }
 
     try {
       // ── Execution ────────────────────────────────────────────────────────
@@ -134,6 +189,7 @@ export function activate(context: vscode.ExtensionContext) {
           await engine.runPrompt(
             text, undefined, label, cellType, promptId,
             blocks, model, discussionId, userSystemPrompt,
+            message.resolvedModel,
           );
         }
       }
@@ -145,6 +201,7 @@ export function activate(context: vscode.ExtensionContext) {
       // ── Explorer ─────────────────────────────────────────────────────────
 
       if (message.type === "EXPLORER_LOAD") {
+
         const notebooks = notebookStore.getAllNotebooks();
         const allDiscussions = notebooks.flatMap(nb =>
           notebookStore.getDiscussionsForNotebook(nb.id)
@@ -262,6 +319,26 @@ export function activate(context: vscode.ExtensionContext) {
           }
         }
       }
+
+// ── Export to Obsidian ───────────────────────────────────────────────
+
+      if (message.type === "EXPORT_OBSIDIAN") {
+        const markdown = notebookStore.exportNotebookAsMarkdown(message.notebookId);
+        if (!markdown) {
+          vscode.window.showErrorMessage("PACT: notebook not found for Obsidian export.");
+          return;
+        }
+
+        const exportsDir = "/Users/nikolajivancic/pact/pact_exports";
+        if (!fs.existsSync(exportsDir)) fs.mkdirSync(exportsDir, { recursive: true });
+
+        const notebook = notebookStore.getAllNotebooks().find(n => n.id === message.notebookId);
+        const safeName = (notebook?.name ?? "notebook").replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+        const filePath = path.join(exportsDir, `${safeName}.md`);
+
+        fs.writeFileSync(filePath, markdown, "utf-8");
+        vscode.window.showInformationMessage(`PACT: "${notebook?.name}" exported to Obsidian.`);
+      }      
 
       // ── Import (verifies signature) ──────────────────────────────────────
 

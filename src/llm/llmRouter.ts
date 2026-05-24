@@ -28,18 +28,19 @@ export class LLMRouter {
     onToken?: (t: string) => void,
     blocks: SerializedContentBlock[] = [],
     systemPrompt?: string,
+    resolvedModel?: string,
   ): Promise<string> {
     if (model === "gpt") {
       if (!this.openai) {
         return this.error("OpenAI API key not set", onToken);
       }
-      return this.runGPT(prompt, onToken, blocks, systemPrompt);
+      return this.runGPT(prompt, onToken, blocks, systemPrompt, resolvedModel ?? "gpt-4.1");
     }
     if (model === "claude") {
       if (!this.claude) {
         return this.error("Claude API key not set", onToken);
       }
-      return this.runClaude(prompt, onToken, blocks, systemPrompt);
+      return this.runClaude(prompt, onToken, blocks, systemPrompt, resolvedModel ?? "claude-sonnet-4-6");
     }
     return this.error("Unknown model", onToken);
   }
@@ -49,6 +50,7 @@ export class LLMRouter {
     onToken?: (t: string) => void,
     blocks: SerializedContentBlock[] = [],
     systemPrompt?: string,
+    resolvedModel: string = "gpt-4.1",
   ): Promise<string> {
     let full = "";
 
@@ -74,9 +76,8 @@ export class LLMRouter {
     }
     messages.push({ role: "user", content });
 
-
     const stream = await this.openai!.chat.completions.create({
-      model: "gpt-4.1",
+      model: resolvedModel,
       messages,
       stream: true,
     });
@@ -97,6 +98,7 @@ export class LLMRouter {
     onToken?: (t: string) => void,
     blocks: SerializedContentBlock[] = [],
     systemPrompt?: string,
+    resolvedModel: string = "claude-sonnet-4-6",
   ): Promise<string> {
     let full = "";
 
@@ -119,7 +121,7 @@ export class LLMRouter {
     });
 
     const stream = await this.claude!.messages.stream({
-      model: "claude-sonnet-4-6",
+      model: resolvedModel,
       max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: "user", content }],

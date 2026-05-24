@@ -2,7 +2,7 @@
   "name": "pact-react-2",
   "displayName": "PACT",
   "publisher": "adriatic",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -10,18 +10,7 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "pact.setApiKey",
-        "title": "PACT: Set GPT Key"
-      },
-      {
-        "command": "pact.setClaudeKey",
-        "title": "PACT: Set Claude Key"
-      }
-    ]
-  },
+  "contributes": {},
   "scripts": {
     "build": "echo \"Build started at $(date)\" && npm run build:web && npm run build:ext && echo \"Build completed at $(date)\"",
     "build:web": "node build-web.js",
