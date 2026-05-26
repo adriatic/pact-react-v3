@@ -169,6 +169,35 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    if (message.type === "GET_CONFIG") {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        const systemPrompt = message.notebookId
+          ? notebookStore.getSystemPrompt(message.notebookId)
+          : null;
+        panel.webview.postMessage({
+          type: "configLoaded",
+          name: config.user?.name ?? "",
+          email: config.user?.email ?? "",
+          context: config.user?.context ?? "",
+          anthropicApiKey: config.anthropicApiKey ?? "",
+          openaiApiKey: config.openaiApiKey ?? "",
+          systemPrompt: systemPrompt ?? "",
+        });
+      } catch {
+        panel.webview.postMessage({ type: "configLoaded",
+          name: "", email: "", context: "",
+          anthropicApiKey: "", openaiApiKey: "", systemPrompt: "" });
+      }
+      return;
+    }
+
+    if (message.type === "UPDATE_SYSTEM_PROMPT") {
+      notebookStore.updateSystemPrompt(message.notebookId, message.systemPrompt ?? null);
+      panel.webview.postMessage({ type: "systemPromptUpdated", notebookId: message.notebookId });
+      return;
+    }
+
     try {
       // ── Execution ────────────────────────────────────────────────────────
 

@@ -25,7 +25,9 @@ type CellEvent =
   | { type: "draftLoaded"; discussionId: string; promptText: string | null }
   | { type: "cellError"; cellId: string; error: string }
   | { type: "showSetup" }
-  | { type: "setupComplete" };
+  | { type: "setupComplete" }
+  | { type: "configLoaded"; name: string; email: string; context: string; anthropicApiKey: string; openaiApiKey: string; systemPrompt: string }
+  | { type: "systemPromptUpdated"; notebookId: string };;
 
 type Cell = {
   id: string;
@@ -237,9 +239,10 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [showClearResponsesConfirm, setShowClearResponsesConfirm] = useState(false);
   const [showNewNotebookDialog, setShowNewNotebookDialog] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsData, setSettingsData] = useState<any>(null);
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookSystemPrompt, setNewNotebookSystemPrompt] = useState("");
-
   const [showSetup, setShowSetup] = useState(false);
 
   // Diff state
@@ -572,6 +575,15 @@ export default function App() {
         case "setupComplete":
           setShowSetup(false);
           break;
+
+        case "configLoaded":
+          setSettingsData(data);
+          setShowSettings(true);
+          break;
+
+        case "systemPromptUpdated":
+          setShowSettings(false);
+          break;
       }
     };
 
@@ -824,7 +836,36 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (showSetup) {
+if (showSettings && settingsData) {
+    return (
+      <Setup
+        initialData={settingsData}
+        defaultTab="keys"
+        isFirstRun={false}
+        onClose={() => setShowSettings(false)}
+        onSave={(data: SetupData) => {
+          vscode.postMessage({
+            type: "SAVE_CONFIG",
+            name: data.name,
+            email: data.email,
+            context: data.context,
+            anthropicApiKey: data.anthropicApiKey,
+            openaiApiKey: data.openaiApiKey,
+          });
+          setShowSettings(false);
+        }}
+        onUpdateSystemPrompt={(systemPrompt: string) => {
+          vscode.postMessage({
+            type: "UPDATE_SYSTEM_PROMPT",
+            notebookId: explorer.activeNotebookId,
+            systemPrompt,
+          });
+        }}
+      />
+    );
+  }
+
+if (showSetup) {
     return (
       <Setup
         onSave={(data: SetupData) => {
@@ -1069,6 +1110,12 @@ export default function App() {
                 color: "#e05252", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em",
               }}>Cancel Diff</button>
           )}
+          <button onClick={() => {
+            vscode.postMessage({ type: "GET_CONFIG", notebookId: explorer.activeNotebookId ?? null });
+          }} style={{
+            background: "none", border: "1px solid #555", borderRadius: 4,
+            color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em",
+          }}>Settings</button>
           <button
             onClick={() => !isRunning && setTierOpen(true)}
             style={{

@@ -14,19 +14,15 @@ NAME=$(echo "$EMAIL_PREFIX" | sed 's/[._-]/ /g' | awk '{for(i=1;i<=NF;i++) $i=to
 cd "$(dirname "$0")"
 
 # ── Read keys from config.json ────────────────────────────────────────────────
-KEYS_FILE="config.json"
+KEYS_FILE="$HOME/Library/Application Support/Code/User/globalStorage/adriatic.pact-react-2/config.json"
 if [ ! -f "$KEYS_FILE" ]; then
-  echo "ERROR: config.json not found in project root"
+  echo "ERROR: config.json not found at $KEYS_FILE"
   exit 1
 fi
 echo "Using keys file: $KEYS_FILE"
 
-OPENAI_KEY=$(node -e "console.log(require('./config.json').openaiApiKey)")
-ANTHROPIC_KEY=$(node -e "console.log(require('./config.json').anthropicApiKey)")
-
-# ── Back up dev config ────────────────────────────────────────────────────────
-cp config.json config.dev.json
-echo "Development config backed up to config.dev.json"
+OPENAI_KEY=$(node -e "console.log(require('$KEYS_FILE').openaiApiKey)")
+ANTHROPIC_KEY=$(node -e "console.log(require('$KEYS_FILE').anthropicApiKey)")
 
 # ── Write beta config ─────────────────────────────────────────────────────────
 node -e "
@@ -40,8 +36,7 @@ const config = {
     context: 'Beta tester of PACT, a structured AI research tool that runs as a VSCode extension.'
   }
 };
-fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-"
+fs.writeFileSync('/tmp/pact-beta-config.json', JSON.stringify(config, null, 2));"
 echo "Beta config written"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
@@ -49,7 +44,7 @@ echo "Building..."
 npm run build
 
 # ── Package ───────────────────────────────────────────────────────────────────
-VSIX_NAME="pact-${EMAIL_PREFIX}-0.0.2.vsix"
+VSIX_NAME="pact-${EMAIL_PREFIX}-0.0.3.vsix"
 echo "Packaging as $VSIX_NAME..."
 vsce package \
   --allow-missing-repository \
@@ -60,10 +55,6 @@ vsce package \
 mkdir -p betas
 mv "$VSIX_NAME" betas/
 echo "Moved to betas/$VSIX_NAME"
-
-# ── Restore dev config ────────────────────────────────────────────────────────
-mv config.dev.json config.json
-echo "Development config restored"
 
 echo ""
 echo "✓ Done: betas/$VSIX_NAME"

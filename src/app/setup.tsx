@@ -1,4 +1,4 @@
- // Copyright © 2026 PACTResearch.net. All rights reserved.
+// Copyright © 2026 PACTResearch.net. All rights reserved.
 // pactresearch.net
 import React, { useState } from "react";
 
@@ -10,30 +10,41 @@ export type SetupData = {
   openaiApiKey: string;
 };
 
+type Tab = "keys" | "profile" | "notebook";
+
 type SetupProps = {
   onSave: (data: SetupData) => void;
+  onUpdateSystemPrompt?: (systemPrompt: string) => void;
+  onClose?: () => void;
+  initialData?: Partial<SetupData & { systemPrompt: string }>;
+  defaultTab?: Tab;
+  isFirstRun?: boolean;
 };
 
-type Step = "form" | "verify";
-
-export default function Setup({ onSave }: SetupProps) {
-  const [step, setStep] = useState<Step>("form");
+export default function Setup({
+  onSave,
+  onUpdateSystemPrompt,
+  onClose,
+  initialData = {},
+  defaultTab = "keys",
+  isFirstRun = false,
+}: SetupProps) {
+  const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
   const [form, setForm] = useState<SetupData>({
-    name: "",
-    email: "",
-    context: "",
-    anthropicApiKey: "",
-    openaiApiKey: "",
+    name: initialData.name ?? "",
+    email: initialData.email ?? "",
+    context: initialData.context ?? "",
+    anthropicApiKey: initialData.anthropicApiKey ?? "",
+    openaiApiKey: initialData.openaiApiKey ?? "",
   });
+  const [systemPrompt, setSystemPrompt] = useState(initialData.systemPrompt ?? "");
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [errors, setErrors] = useState<Partial<SetupData>>({});
+  const [saved, setSaved] = useState(false);
 
-  function validate(): boolean {
+  function validateKeys(): boolean {
     const e: Partial<SetupData> = {};
-    if (!form.name.trim()) e.name = "Required";
-    if (!form.email.trim()) e.email = "Required";
-    if (!form.email.includes("@")) e.email = "Enter a valid email";
     if (!form.anthropicApiKey.trim()) e.anthropicApiKey = "Required — get yours at console.anthropic.com";
     if (form.anthropicApiKey.trim() && !form.anthropicApiKey.startsWith("sk-ant-")) {
       e.anthropicApiKey = "Anthropic keys start with sk-ant-";
@@ -45,21 +56,35 @@ export default function Setup({ onSave }: SetupProps) {
     return Object.keys(e).length === 0;
   }
 
-  function handleNext() {
-    if (validate()) setStep("verify");
+  function validateProfile(): boolean {
+    const e: Partial<SetupData> = {};
+    if (!form.name.trim()) e.name = "Required";
+    if (!form.email.trim()) e.email = "Required";
+    if (!form.email.includes("@")) e.email = "Enter a valid email";
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
 
-  function handleBack() {
-    setStep("form");
-  }
-
-  function handleConfirm() {
+  function handleSaveKeys() {
+    if (!validateKeys()) return;
     onSave(form);
+    flash();
   }
 
-  function mask(key: string): string {
-    if (!key) return "—";
-    return key.substring(0, 10) + "••••••••••••••••" + key.slice(-4);
+  function handleSaveProfile() {
+    if (!validateProfile()) return;
+    onSave(form);
+    flash();
+  }
+
+  function handleSaveSystemPrompt() {
+    onUpdateSystemPrompt?.(systemPrompt);
+    flash();
+  }
+
+  function flash() {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
   }
 
   const inputStyle: React.CSSProperties = {
@@ -91,6 +116,12 @@ export default function Setup({ onSave }: SetupProps) {
     marginBottom: 16,
   };
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "keys", label: "Keys" },
+    { id: "profile", label: "Profile" },
+    { id: "notebook", label: "Notebook" },
+  ];
+
   return (
     <div style={{
       display: "flex",
@@ -105,39 +136,117 @@ export default function Setup({ onSave }: SetupProps) {
         border: "1px solid #444",
         borderRadius: 8,
         padding: 32,
-        width: 480,
+        width: 520,
         maxWidth: "95vw",
       }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontSize: "1.2em", color: "#d4d4d4" }}>
-            PACT Research
-          </h2>
-          <p style={{ margin: "6px 0 0", color: "#888", fontSize: "0.85em" }}>
-            {step === "form"
-              ? "First-time setup — your keys are stored locally and never shared."
-              : "Please verify your details before saving."}
-          </p>
-          <div style={{
-            display: "flex",
-            gap: 6,
-            marginTop: 14,
-          }}>
-            {(["form", "verify"] as Step[]).map((s, i) => (
-              <div key={s} style={{
-                height: 3,
-                flex: 1,
-                borderRadius: 2,
-                background: step === s || (s === "form") ? "#0e639c" : "#444",
-                opacity: step === "verify" && s === "form" ? 0.4 : 1,
-              }} />
-            ))}
+        <div style={{ marginBottom: 24, display: "flex", alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: "1.2em", color: "#d4d4d4" }}>
+              PACT Research
+            </h2>
+            <p style={{ margin: "6px 0 0", color: "#888", fontSize: "0.85em" }}>
+              {isFirstRun
+                ? "First-time setup — your keys are stored locally and never shared."
+                : "Settings — changes are saved immediately."}
+            </p>
           </div>
+          {!isFirstRun && onClose && (
+            <span
+              onClick={onClose}
+              style={{ color: "#555", cursor: "pointer", fontSize: "1.2em", lineHeight: 1, marginLeft: 12 }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#e05252")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+            >✕</span>
+          )}
         </div>
 
-        {/* ── Step 1: Form ── */}
-        {step === "form" && (
+        {/* Tab bar */}
+        <div style={{
+          display: "flex",
+          borderBottom: "1px solid #444",
+          marginBottom: 24,
+          gap: 0,
+        }}>
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setErrors({}); }}
+              style={{
+                background: "none",
+                border: "none",
+                borderBottom: activeTab === tab.id ? "2px solid #0e639c" : "2px solid transparent",
+                color: activeTab === tab.id ? "#d4d4d4" : "#666",
+                cursor: "pointer",
+                padding: "6px 16px",
+                fontSize: "0.85em",
+                marginBottom: -1,
+              }}
+            >{tab.label}</button>
+          ))}
+        </div>
+
+        {/* ── Keys tab ── */}
+        {activeTab === "keys" && (
+          <>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>
+                Anthropic API key{" "}
+                <a href="https://console.anthropic.com" style={{ color: "#0e639c", fontSize: "0.85em" }}>
+                  console.anthropic.com
+                </a>
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  style={{ ...inputStyle, borderColor: errors.anthropicApiKey ? "#e05252" : "#555", paddingRight: 60 }}
+                  type={showAnthropicKey ? "text" : "password"}
+                  value={form.anthropicApiKey}
+                  onChange={e => setForm(p => ({ ...p, anthropicApiKey: e.target.value }))}
+                  placeholder="sk-ant-..."
+                  autoFocus
+                />
+                <button onClick={() => setShowAnthropicKey(p => !p)} style={{
+                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: "0.75em",
+                }}>{showAnthropicKey ? "hide" : "show"}</button>
+              </div>
+              {errors.anthropicApiKey && <div style={errorStyle}>{errors.anthropicApiKey}</div>}
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>
+                OpenAI API key{" "}
+                <span style={{ color: "#555" }}>(optional — needed for GPT models)</span>
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  style={{ ...inputStyle, borderColor: errors.openaiApiKey ? "#e05252" : "#555", paddingRight: 60 }}
+                  type={showOpenAIKey ? "text" : "password"}
+                  value={form.openaiApiKey}
+                  onChange={e => setForm(p => ({ ...p, openaiApiKey: e.target.value }))}
+                  placeholder="sk-..."
+                />
+                <button onClick={() => setShowOpenAIKey(p => !p)} style={{
+                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: "0.75em",
+                }}>{showOpenAIKey ? "hide" : "show"}</button>
+              </div>
+              {errors.openaiApiKey && <div style={errorStyle}>{errors.openaiApiKey}</div>}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+              {saved && <span style={{ color: "#1D9E75", fontSize: "0.8em" }}>✓ Saved</span>}
+              <button onClick={handleSaveKeys} style={{
+                background: "#0e639c", border: "none", borderRadius: 4,
+                color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
+              }}>Save</button>
+            </div>
+          </>
+        )}
+
+        {/* ── Profile tab ── */}
+        {activeTab === "profile" && (
           <>
             <div style={fieldStyle}>
               <label style={labelStyle}>Your name</label>
@@ -165,15 +274,10 @@ export default function Setup({ onSave }: SetupProps) {
             <div style={fieldStyle}>
               <label style={labelStyle}>
                 What will you use PACT for?{" "}
-                <span style={{ color: "#555" }}>(optional — helps Claude understand your context)</span>
+                <span style={{ color: "#555" }}>(optional)</span>
               </label>
               <textarea
-                style={{
-                  ...inputStyle,
-                  resize: "vertical",
-                  lineHeight: 1.5,
-                  minHeight: 60,
-                }}
+                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, minHeight: 60 }}
                 value={form.context}
                 onChange={e => setForm(p => ({ ...p, context: e.target.value }))}
                 placeholder="e.g. Researching cycling performance and nutrition..."
@@ -181,145 +285,40 @@ export default function Setup({ onSave }: SetupProps) {
               />
             </div>
 
-            <div style={fieldStyle}>
-              <label style={labelStyle}>
-                Anthropic API key{" "}
-                <a
-                  href="https://console.anthropic.com"
-                  style={{ color: "#0e639c", fontSize: "0.85em" }}
-                >
-                  Get one at console.anthropic.com
-                </a>
-              </label>
-              <div style={{ position: "relative" }}>
-                <input
-                  style={{
-                    ...inputStyle,
-                    borderColor: errors.anthropicApiKey ? "#e05252" : "#555",
-                    paddingRight: 60,
-                  }}
-                  type={showAnthropicKey ? "text" : "password"}
-                  value={form.anthropicApiKey}
-                  onChange={e => setForm(p => ({ ...p, anthropicApiKey: e.target.value }))}
-                  placeholder="sk-ant-..."
-                />
-                <button
-                  onClick={() => setShowAnthropicKey(p => !p)}
-                  style={{
-                    position: "absolute", right: 8, top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none", border: "none",
-                    color: "#666", cursor: "pointer", fontSize: "0.75em",
-                  }}
-                >
-                  {showAnthropicKey ? "hide" : "show"}
-                </button>
-              </div>
-              {errors.anthropicApiKey && <div style={errorStyle}>{errors.anthropicApiKey}</div>}
-            </div>
-
-            <div style={fieldStyle}>
-              <label style={labelStyle}>
-                OpenAI API key{" "}
-                <span style={{ color: "#555" }}>(optional — needed for GPT-4.1)</span>
-              </label>
-              <div style={{ position: "relative" }}>
-                <input
-                  style={{
-                    ...inputStyle,
-                    borderColor: errors.openaiApiKey ? "#e05252" : "#555",
-                    paddingRight: 60,
-                  }}
-                  type={showOpenAIKey ? "text" : "password"}
-                  value={form.openaiApiKey}
-                  onChange={e => setForm(p => ({ ...p, openaiApiKey: e.target.value }))}
-                  placeholder="sk-..."
-                />
-                <button
-                  onClick={() => setShowOpenAIKey(p => !p)}
-                  style={{
-                    position: "absolute", right: 8, top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none", border: "none",
-                    color: "#666", cursor: "pointer", fontSize: "0.75em",
-                  }}
-                >
-                  {showOpenAIKey ? "hide" : "show"}
-                </button>
-              </div>
-              {errors.openaiApiKey && <div style={errorStyle}>{errors.openaiApiKey}</div>}
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                onClick={handleNext}
-                style={{
-                  background: "#0e639c", border: "none", borderRadius: 4,
-                  color: "#fff", cursor: "pointer", padding: "7px 24px",
-                  fontSize: "0.9em",
-                }}
-              >
-                Review →
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+              {saved && <span style={{ color: "#1D9E75", fontSize: "0.8em" }}>✓ Saved</span>}
+              <button onClick={handleSaveProfile} style={{
+                background: "#0e639c", border: "none", borderRadius: 4,
+                color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
+              }}>Save</button>
             </div>
           </>
         )}
 
-        {/* ── Step 2: Verify ── */}
-        {step === "verify" && (
+        {/* ── Notebook tab ── */}
+        {activeTab === "notebook" && (
           <>
-            <div style={{
-              background: "#1e1e1e",
-              border: "1px solid #444",
-              borderRadius: 6,
-              padding: 16,
-              marginBottom: 20,
-            }}>
-              {[
-                { label: "Name", value: form.name },
-                { label: "Email", value: form.email },
-                { label: "Context", value: form.context || "—" },
-                { label: "Anthropic key", value: mask(form.anthropicApiKey) },
-                { label: "OpenAI key", value: form.openaiApiKey ? mask(form.openaiApiKey) : "Not provided" },
-              ].map(row => (
-                <div key={row.label} style={{
-                  display: "grid",
-                  gridTemplateColumns: "120px 1fr",
-                  gap: 8,
-                  marginBottom: 10,
-                  fontSize: "0.85em",
-                }}>
-                  <span style={{ color: "#666" }}>{row.label}</span>
-                  <span style={{ color: "#d4d4d4", wordBreak: "break-all" }}>{row.value}</span>
-                </div>
-              ))}
+            <div style={fieldStyle}>
+              <label style={labelStyle}>
+                System prompt{" "}
+                <span style={{ color: "#555" }}>(anchors all discussions in the active notebook)</span>
+              </label>
+              <textarea
+                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6, minHeight: 180 }}
+                value={systemPrompt}
+                onChange={e => setSystemPrompt(e.target.value)}
+                placeholder="Describe the research domain, your role, and the analytical stance PACT should take..."
+                rows={8}
+                autoFocus
+              />
             </div>
 
-            <p style={{ color: "#666", fontSize: "0.8em", marginBottom: 20, lineHeight: 1.6 }}>
-              Your keys will be saved to <code style={{ color: "#888" }}>config.json</code> on
-              your local machine only. They are never transmitted to PACTResearch.net or any
-              third party. API calls go directly from your machine to Anthropic and OpenAI.
-            </p>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={handleBack}
-                style={{
-                  background: "none", border: "1px solid #555", borderRadius: 4,
-                  color: "#888", cursor: "pointer", padding: "7px 16px", fontSize: "0.9em",
-                }}
-              >
-                ← Edit
-              </button>
-              <button
-                onClick={handleConfirm}
-                style={{
-                  background: "#1D9E75", border: "none", borderRadius: 4,
-                  color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
-                }}
-              >
-                Save &amp; Start PACT
-              </button>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+              {saved && <span style={{ color: "#1D9E75", fontSize: "0.8em" }}>✓ Saved</span>}
+              <button onClick={handleSaveSystemPrompt} style={{
+                background: "#0e639c", border: "none", borderRadius: 4,
+                color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
+              }}>Save</button>
             </div>
           </>
         )}

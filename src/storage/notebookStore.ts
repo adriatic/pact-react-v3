@@ -255,6 +255,12 @@ export class NotebookStore {
     return row?.system_prompt ?? null;
   }
 
+  updateSystemPrompt(notebookId: string, systemPrompt: string | null): void {
+    const db = getDb(this.extensionPath);
+    db.prepare("UPDATE notebooks SET system_prompt = ? WHERE id = ?")
+      .run(systemPrompt ?? null, notebookId);
+  }
+
   // ── Export (unsigned) ────────────────────────────────────────────────────
 
   exportNotebook(notebookId: string): PactExport | null {

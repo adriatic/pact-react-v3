@@ -18,6 +18,7 @@ export function useExplorer(vscode: any) {
     const [activeDiscussionId, setActiveDiscussionId] = useState<string | null>(
         "discussion-tutorial-00"
     );
+    const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
 
     // Request initial data on mount
     useEffect(() => {
@@ -78,6 +79,7 @@ export function useExplorer(vscode: any) {
 
     function selectDiscussion(discussion: Discussion) {
         setActiveDiscussionId(discussion.id);
+        setActiveNotebookId(discussion.notebookId);
         if (!discussion.id.startsWith("discussion-tutorial-") &&
             !discussion.id.startsWith("draft-")) {
             vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: discussion.id });
@@ -117,6 +119,7 @@ export function useExplorer(vscode: any) {
         notebooks,
         discussions,
         activeDiscussionId,
+        activeNotebookId,
         selectDiscussion,
         createNotebook,
         createDiscussion,
