@@ -46,7 +46,7 @@ export default function Explorer({
 }: Props) {
     const [exportMenuId, setExportMenuId] = useState<string | null>(null);
     const [expandedNotebooks, setExpandedNotebooks] = useState<Record<string, boolean>>(
-        { "notebook-tutorial": true, "notebook-general": true }
+        { "notebook-tutorial": false, "notebook-general": true }
     );
     const [newDiscussionName, setNewDiscussionName] = useState("");
     const [newDiscussionTarget, setNewDiscussionTarget] = useState<string | null>(null);

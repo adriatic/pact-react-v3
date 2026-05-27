@@ -267,8 +267,8 @@ export default function App() {
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Whether a discussion is active and writable
-  const hasActiveDiscussion = !!explorer.activeDiscussionId &&
-    !explorer.activeDiscussionId.startsWith("discussion-tutorial-");
+  const hasActiveDiscussion = !!explorer.activeDiscussionId;
+  const isActiveTutorial = explorer.activeDiscussionId?.startsWith("discussion-tutorial-");
 
   function toggleRaw(cellId: string) {
     setRawCells(prev => ({ ...prev, [cellId]: !prev[cellId] }));
@@ -594,8 +594,8 @@ export default function App() {
   // ── On discussion change: clear cells, clear composer, request draft ──────
 
   useEffect(() => {
-    setCells({});
     if (!explorer.activeDiscussionId?.startsWith("discussion-tutorial-")) {
+      setCells({});
       if (composerRef.current) composerRef.current.innerHTML = "";
       if (explorer.activeDiscussionId) {
         vscode.postMessage({
@@ -836,7 +836,7 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-if (showSettings && settingsData) {
+  if (showSettings && settingsData) {
     return (
       <Setup
         initialData={settingsData}
@@ -865,7 +865,7 @@ if (showSettings && settingsData) {
     );
   }
 
-if (showSetup) {
+  if (showSetup) {
     return (
       <Setup
         onSave={(data: SetupData) => {
@@ -998,11 +998,11 @@ if (showSetup) {
       )}
 
       {tierOpen && (
-        <div style={{
+        <div onClick={() => setTierOpen(false)} style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
         }}>
-          <div style={{
+          <div onClick={e => e.stopPropagation()} style={{
             background: "#2d2d2d", border: "1px solid #555", borderRadius: 6,
             padding: 24, maxWidth: 420, width: "90%",
           }}>
@@ -1204,7 +1204,12 @@ if (showSetup) {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ position: "relative" }}>
+
+                    <div style={{ position: "relative" }} onBlur={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setModelOpen(false);
+                      }
+                    }}>
                       <button onClick={() => setModelOpen(p => !p)} style={{
                         background: "none", border: "1px solid #555", borderRadius: 4,
                         color: "#ccc", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em",
@@ -1220,12 +1225,15 @@ if (showSetup) {
                           borderRadius: 4, minWidth: 130, zIndex: 10,
                         }}>
                           {(["gpt", "claude"] as LLMModel[]).map(m => (
-                            <div key={m} onClick={() => { setModel(m); setModelOpen(false); }} style={{
+
+                            <div key={m} onMouseDown={() => { setModel(m); setModelOpen(false); }} style={{
                               padding: "6px 12px", cursor: "pointer",
                               display: "flex", alignItems: "center", gap: 8, color: "#ccc",
                             }}>
                               <span style={{ opacity: model === m ? 1 : 0 }}>✓</span>
-                              {m === "gpt" ? "GPT-4.1" : "Claude Sonnet"}
+                              {m === "gpt"
+                                ? (tier === "economy" ? "GPT-4.1 mini" : "GPT-4.1")
+                                : (tier === "economy" ? "Haiku" : "Sonnet")}
                             </div>
                           ))}
                         </div>
@@ -1233,13 +1241,14 @@ if (showSetup) {
                     </div>
                     <button
                       onClick={send}
-                      title={hasActiveDiscussion ? "Send (Cmd+Enter)" : "Select a discussion first"}
+
+                      title={hasActiveDiscussion && !isActiveTutorial ? "Send (Cmd+Enter)" : "Select a discussion first"}
                       style={{
-                        background: hasActiveDiscussion ? "#0e639c" : "#333",
+                        background: hasActiveDiscussion && !isActiveTutorial ? "#0e639c" : "#333",
                         border: "none", borderRadius: "50%",
                         width: 32, height: 32,
-                        cursor: hasActiveDiscussion ? "pointer" : "default",
-                        color: hasActiveDiscussion ? "#fff" : "#555",
+                        cursor: hasActiveDiscussion && !isActiveTutorial ? "pointer" : "default",
+                        color: hasActiveDiscussion && !isActiveTutorial ? "#fff" : "#555",
                         fontSize: "1em", display: "flex", alignItems: "center", justifyContent: "center",
                       }}
                     >↑</button>
