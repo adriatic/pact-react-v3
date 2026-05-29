@@ -16,9 +16,14 @@ type SetupProps = {
   onSave: (data: SetupData) => void;
   onUpdateSystemPrompt?: (systemPrompt: string) => void;
   onClose?: () => void;
-  initialData?: Partial<SetupData & { systemPrompt: string }>;
+  initialData?: Partial<SetupData & { systemPrompt: string; iprMessages: { role: string; content: string }[] }>;
   defaultTab?: Tab;
   isFirstRun?: boolean;
+  onIprSend?: (messages: { role: string; content: string }[]) => void;
+  onIprSaveMessages?: (messages: { role: string; content: string }[]) => void;
+  iprPending?: boolean;
+  iprLastResponse?: string;
+  iprError?: string;
 };
 
 export default function Setup({
@@ -28,7 +33,13 @@ export default function Setup({
   initialData = {},
   defaultTab = "keys",
   isFirstRun = false,
+  onIprSend,
+  onIprSaveMessages,
+  iprPending = false,
+  iprLastResponse,
+  iprError,
 }: SetupProps) {
+
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
   const [form, setForm] = useState<SetupData>({
     name: initialData.name ?? "",
@@ -42,7 +53,22 @@ export default function Setup({
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [errors, setErrors] = useState<Partial<SetupData>>({});
   const [saved, setSaved] = useState(false);
+  const [iprMessages, setIprMessages] = useState<{ role: string; content: string }[]>(
+    initialData?.iprMessages ?? []
+  );
 
+  const [iprInput, setIprInput] = useState("");
+
+  // Sync incoming LLM response into local message history
+  React.useEffect(() => {
+    if (iprLastResponse) {
+      setIprMessages(prev => {
+        if (prev.length > 0 && prev[prev.length - 1].role === "assistant" &&
+          prev[prev.length - 1].content === iprLastResponse) return prev;
+        return [...prev, { role: "assistant", content: iprLastResponse }];
+      });
+    }
+  }, [iprLastResponse]);
   function validateKeys(): boolean {
     const e: Partial<SetupData> = {};
     if (!form.anthropicApiKey.trim()) e.anthropicApiKey = "Required — get yours at console.anthropic.com";
@@ -298,18 +324,113 @@ export default function Setup({
         {/* ── Notebook tab ── */}
         {activeTab === "notebook" && (
           <>
+            {/* IPR Chat */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>
+                Refine with AI{" "}
+                <span style={{ color: "#555" }}>(describe your domain and let PACT help craft the system prompt)</span>
+              </label>
+
+              {/* Message history */}
+              {iprMessages.length > 0 && (
+                <div style={{
+                  background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                  padding: "8px 10px", marginBottom: 8, maxHeight: 200, overflowY: "auto",
+                  fontSize: "0.82em", lineHeight: 1.6,
+                }}>
+                  {iprMessages.map((m, i) => {
+                    const displayContent = m.content
+                      .replace(/SYSTEM_PROMPT_START[\s\S]*?SYSTEM_PROMPT_END/g, "")
+                      .trim();
+                    if (!displayContent) return null;
+                    return (
+                      <div key={i} style={{ marginBottom: 8 }}>
+                        <span style={{ color: m.role === "user" ? "#4ec94e" : "#888", fontWeight: "bold" }}>
+                          {m.role === "user" ? "You" : "PACT"}
+                        </span>
+                        <span style={{ color: "#bbb", marginLeft: 8, whiteSpace: "pre-wrap" }}>{displayContent}</span>
+                      </div>
+                    );
+                  })}
+
+                  {iprPending && (
+                    <div style={{ color: "#555", fontStyle: "italic" }}>PACT is thinking...</div>
+                  )}
+                  {iprError && (
+                    <div style={{ color: "#e05252", fontSize: "0.85em" }}>{iprError}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Input */}
+              <div style={{ display: "flex", gap: 8 }}>
+                <textarea
+                  style={{ ...inputStyle, resize: "none", flex: 1, minHeight: 44, lineHeight: 1.5 }}
+                  value={iprInput}
+                  onChange={e => setIprInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!iprInput.trim() || iprPending) return;
+                      const updated = [...iprMessages, { role: "user", content: iprInput.trim() }];
+                      setIprMessages(updated);
+                      setIprInput("");
+                      onIprSend?.(updated);
+                      onIprSaveMessages?.(updated);
+                    }
+                  }}
+                  placeholder="Describe your research domain... (Enter to send)"
+                  rows={2}
+                />
+                <button
+                  onClick={() => {
+                    if (!iprInput.trim() || iprPending) return;
+                    const updated = [...iprMessages, { role: "user", content: iprInput.trim() }];
+                    setIprMessages(updated);
+                    setIprInput("");
+                    onIprSend?.(updated);
+                    onIprSaveMessages?.(updated);
+                  }}
+                  style={{
+                    background: "#0e639c", border: "none", borderRadius: 4,
+                    color: "#fff", cursor: "pointer", padding: "0 14px", fontSize: "0.85em",
+                    alignSelf: "stretch",
+                  }}
+                >→</button>
+              </div>
+
+              {/* Use this prompt button */}
+              {iprMessages.some(m => m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")) && (
+                <button
+                  onClick={() => {
+                    const last = [...iprMessages].reverse().find(m =>
+                      m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")
+                    );
+                    if (last) {
+                      const match = last.content.match(/SYSTEM_PROMPT_START\n?([\s\S]*?)\nSYSTEM_PROMPT_END/);
+                      if (match) setSystemPrompt(match[1].trim());
+                    }
+                  }}
+                  style={{
+                    marginTop: 6, background: "#1D9E75", border: "none", borderRadius: 4,
+                    color: "#fff", cursor: "pointer", padding: "4px 14px", fontSize: "0.82em",
+                  }}
+                >↓ Use this prompt</button>
+              )}
+            </div>
+
+            {/* System prompt textarea */}
             <div style={fieldStyle}>
               <label style={labelStyle}>
                 System prompt{" "}
-                <span style={{ color: "#555" }}>(anchors all discussions in the active notebook)</span>
+                <span style={{ color: "#555" }}>(edit directly or use AI refinement above)</span>
               </label>
               <textarea
-                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6, minHeight: 180 }}
+                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6, minHeight: 140 }}
                 value={systemPrompt}
                 onChange={e => setSystemPrompt(e.target.value)}
                 placeholder="Describe the research domain, your role, and the analytical stance PACT should take..."
-                rows={8}
-                autoFocus
+                rows={6}
               />
             </div>
 

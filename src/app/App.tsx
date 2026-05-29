@@ -27,8 +27,10 @@ type CellEvent =
   | { type: "showSetup" }
   | { type: "setupComplete" }
   | { type: "configLoaded"; name: string; email: string; context: string; anthropicApiKey: string; openaiApiKey: string; systemPrompt: string }
-  | { type: "systemPromptUpdated"; notebookId: string };;
-
+  | { type: "systemPromptUpdated"; notebookId: string }
+  | { type: "iprMessagesLoaded"; notebookId: string; messages: { role: string; content: string }[] }
+  | { type: "iprResponse"; content: string }
+  | { type: "iprError"; error: string };
 type Cell = {
   id: string;
   parentId?: string;
@@ -584,6 +586,26 @@ export default function App() {
         case "systemPromptUpdated":
           setShowSettings(false);
           break;
+
+        case "iprMessagesLoaded":
+          setSettingsData((prev: any) => ({ ...prev, iprMessages: data.messages }));
+          break;
+
+        case "iprResponse":
+          setSettingsData((prev: any) => {
+            const updated = [...(prev.iprMessages ?? []), { role: "assistant", content: data.content }];
+            vscode.postMessage({
+              type: "SAVE_IPR_MESSAGES",
+              notebookId: explorer.activeNotebookId,
+              messages: updated,
+            });
+            return { ...prev, iprPending: false, iprLastResponse: data.content, iprMessages: updated };
+          });
+          break;
+
+        case "iprError":
+          setSettingsData((prev: any) => ({ ...prev, iprPending: false, iprError: data.error }));
+          break;
       }
     };
 
@@ -665,6 +687,7 @@ export default function App() {
   }
 
   function renderNode(node: TreeNode, depth = 0) {
+    if (!node.response?.trim() && node.status === "done") return null;
     const isRaw = rawCells[node.id] ?? false;
     const isCopied = copiedCells[node.id] ?? false;
     const html = marked(node.response || "") as string;
@@ -861,6 +884,28 @@ export default function App() {
             systemPrompt,
           });
         }}
+ 
+        onIprSend={(messages) => {
+          setSettingsData((prev: any) => ({ ...prev, iprPending: true, iprError: undefined }));
+          vscode.postMessage({
+            type: "IPR_REFINE",
+            messages,
+            model,
+            resolvedModel: tier === "economy"
+              ? (model === "claude" ? "claude-haiku-4-5-20251001" : "gpt-4.1-mini")
+              : (model === "claude" ? "claude-sonnet-4-20250514" : "gpt-4.1"),
+          });
+        }}
+        onIprSaveMessages={(messages) => {
+          vscode.postMessage({
+            type: "SAVE_IPR_MESSAGES",
+            notebookId: explorer.activeNotebookId,
+            messages,
+          });
+        }}
+        iprPending={settingsData.iprPending ?? false}
+        iprLastResponse={settingsData.iprLastResponse}
+        iprError={settingsData.iprError}
       />
     );
   }

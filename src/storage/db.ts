@@ -133,6 +133,11 @@ const migrations: Migration[] = [
       VALUES ('notebook-drafts', 'Drafts', 1, ${Date.now()});
     `,
   },
+  {
+    version: 9,
+    description: "Add ipr_messages to notebooks for IPR chat persistence",
+    sql: `ALTER TABLE notebooks ADD COLUMN ipr_messages TEXT`,
+  },
 ];
 
 function getSchemaVersion(database: Database.Database): number {

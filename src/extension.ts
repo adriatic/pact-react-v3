@@ -185,9 +185,11 @@ export function activate(context: vscode.ExtensionContext) {
           systemPrompt: systemPrompt ?? "",
         });
       } catch {
-        panel.webview.postMessage({ type: "configLoaded",
+        panel.webview.postMessage({
+          type: "configLoaded",
           name: "", email: "", context: "",
-          anthropicApiKey: "", openaiApiKey: "", systemPrompt: "" });
+          anthropicApiKey: "", openaiApiKey: "", systemPrompt: ""
+        });
       }
       return;
     }
@@ -195,6 +197,53 @@ export function activate(context: vscode.ExtensionContext) {
     if (message.type === "UPDATE_SYSTEM_PROMPT") {
       notebookStore.updateSystemPrompt(message.notebookId, message.systemPrompt ?? null);
       panel.webview.postMessage({ type: "systemPromptUpdated", notebookId: message.notebookId });
+      return;
+    }
+
+    if (message.type === "GET_IPR_MESSAGES") {
+      const messages = notebookStore.getIprMessages(message.notebookId);
+      panel.webview.postMessage({ type: "iprMessagesLoaded", notebookId: message.notebookId, messages });
+      return;
+    }
+
+    if (message.type === "SAVE_IPR_MESSAGES") {
+      notebookStore.saveIprMessages(message.notebookId, message.messages);
+      return;
+    }
+
+ if (message.type === "IPR_REFINE") {
+      const messages = message.messages as { role: string; content: string }[];
+      const model = message.model ?? "claude";
+      const resolvedModel = message.resolvedModel;
+
+ // Messages passed directly to runMultiTurn — no serialization needed
+
+   const systemMsg = `You are helping a researcher define a system prompt for a PACT research notebook.
+A PACT system prompt anchors all research discussions — it defines the researcher's role, domain, analytical stance, and constraints.
+
+RULES:
+- Ask clarifying questions first. Do not generate a system prompt until you know: (1) the research domain, (2) the researcher's role or expertise, (3) the analytical stance they want.
+- Ask ONE question per response until you have enough information.
+- Only after you have the domain and role clearly defined, output the system prompt in this exact format:
+SYSTEM_PROMPT_START
+<the system prompt>
+SYSTEM_PROMPT_END
+- After outputting a system prompt, ask if the researcher wants to refine it further.
+- Never generate a generic placeholder — wait for real domain information.`;   
+
+try {
+        const response = await router.runMultiTurn(
+          model,
+          messages,
+          systemMsg,
+          resolvedModel,
+        );
+        panel.webview.postMessage({ type: "iprResponse", content: response });
+      } catch (err: any) {
+        panel.webview.postMessage({ type: "iprError", error: err.message });
+      }
+
+
       return;
     }
 
@@ -349,7 +398,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
 
-// ── Export to Obsidian ───────────────────────────────────────────────
+      // ── Export to Obsidian ───────────────────────────────────────────────
 
       if (message.type === "EXPORT_OBSIDIAN") {
         const markdown = notebookStore.exportNotebookAsMarkdown(message.notebookId);
@@ -367,7 +416,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         fs.writeFileSync(filePath, markdown, "utf-8");
         vscode.window.showInformationMessage(`PACT: "${notebook?.name}" exported to Obsidian.`);
-      }      
+      }
 
       // ── Import (verifies signature) ──────────────────────────────────────
 

@@ -261,6 +261,25 @@ export class NotebookStore {
       .run(systemPrompt ?? null, notebookId);
   }
 
+  getIprMessages(notebookId: string): any[] {
+    const db = getDb(this.extensionPath);
+    const row = db
+      .prepare("SELECT ipr_messages FROM notebooks WHERE id = ?")
+      .get(notebookId) as { ipr_messages: string | null } | undefined;
+    if (!row?.ipr_messages) return [];
+    try {
+      return JSON.parse(row.ipr_messages);
+    } catch {
+      return [];
+    }
+  }
+
+  saveIprMessages(notebookId: string, messages: any[]): void {
+    const db = getDb(this.extensionPath);
+    db.prepare("UPDATE notebooks SET ipr_messages = ? WHERE id = ?")
+      .run(JSON.stringify(messages), notebookId);
+  }
+
   // ── Export (unsigned) ────────────────────────────────────────────────────
 
   exportNotebook(notebookId: string): PactExport | null {

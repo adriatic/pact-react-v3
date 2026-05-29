@@ -45,6 +45,43 @@ export class LLMRouter {
     return this.error("Unknown model", onToken);
   }
 
+  async runMultiTurn(
+    model: LLMModel,
+    messages: { role: string; content: string }[],
+    systemPrompt?: string,
+    resolvedModel?: string,
+  ): Promise<string> {
+    if (model === "claude") {
+      if (!this.claude) return "ERROR: Claude API key not set";
+      const response = await this.claude.messages.create({
+        model: resolvedModel ?? "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: messages.map(m => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      });
+      return response.content[0].type === "text" ? response.content[0].text : "";
+    }
+    if (model === "gpt") {
+      if (!this.openai) return "ERROR: OpenAI API key not set";
+      const response = await this.openai.chat.completions.create({
+        model: resolvedModel ?? "gpt-4.1",
+        max_tokens: 1000,
+        messages: [
+          ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
+          ...messages.map(m => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+        ],
+      });
+      return response.choices[0].message.content ?? "";
+    }
+    return "ERROR: Unknown model";
+  }
+  
   private async runGPT(
     prompt: string,
     onToken?: (t: string) => void,
