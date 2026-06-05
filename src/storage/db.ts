@@ -1,9 +1,10 @@
-// Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net
-import Database from "better-sqlite3";
+// Copyright © 2026 PACTResearch.net. All rights reserved.
+// pactresearch.net
+import { DatabaseSync } from "node:sqlite";
 import * as path from "path";
 import * as fs from "fs";
 
-let db: Database.Database | null = null;
+let db: DatabaseSync | null = null;
 
 type Migration = {
   version: number;
@@ -140,7 +141,7 @@ const migrations: Migration[] = [
   },
 ];
 
-function getSchemaVersion(database: Database.Database): number {
+function getSchemaVersion(database: DatabaseSync): number {
   database.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER NOT NULL
@@ -159,7 +160,7 @@ function getSchemaVersion(database: Database.Database): number {
   return row.version;
 }
 
-function runMigrations(database: Database.Database): void {
+function runMigrations(database: DatabaseSync): void {
   const current = getSchemaVersion(database);
   const pending = migrations.filter(m => m.version > current);
 
@@ -174,7 +175,7 @@ function runMigrations(database: Database.Database): void {
   }
 }
 
-export function getDb(extensionPath: string): Database.Database {
+export function getDb(extensionPath: string): DatabaseSync {
   if (db) return db;
 
   const dir = path.join(extensionPath, "pact-data");
@@ -183,7 +184,7 @@ export function getDb(extensionPath: string): Database.Database {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  db = new Database(path.join(dir, "pact.db"));
+  db = new DatabaseSync(path.join(dir, "pact.db"));
   runMigrations(db);
 
   return db;

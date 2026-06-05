@@ -444,7 +444,11 @@ try {
         let notebook;
         let discussions;
 
-        if (isSigned) {
+const configPath = path.join(context.globalStorageUri.fsPath, "config.json");
+        const importConfig = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : {};
+        const trustAllImports = importConfig.trustAllImports === true;
+
+        if (isSigned && !trustAllImports) {
           // Verify signature before importing
           try {
             vscode.window.showInformationMessage("PACT: verifying notebook signature...");

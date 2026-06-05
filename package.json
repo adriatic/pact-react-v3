@@ -29,7 +29,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",
-    "better-sqlite3": "^12.9.0",
+    "@types/node": "^25.9.1",
+    "better-sqlite3": "^12.10.0",
     "diff-match-patch": "^1.0.5",
     "marked": "^18.0.2",
     "openai": "^4.0.0",
