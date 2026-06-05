@@ -211,14 +211,14 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
- if (message.type === "IPR_REFINE") {
+    if (message.type === "IPR_REFINE") {
       const messages = message.messages as { role: string; content: string }[];
       const model = message.model ?? "claude";
       const resolvedModel = message.resolvedModel;
 
- // Messages passed directly to runMultiTurn — no serialization needed
+      // Messages passed directly to runMultiTurn — no serialization needed
 
-   const systemMsg = `You are helping a researcher define a system prompt for a PACT research notebook.
+      const systemMsg = `You are helping a researcher define a system prompt for a PACT research notebook.
 A PACT system prompt anchors all research discussions — it defines the researcher's role, domain, analytical stance, and constraints.
 
 RULES:
@@ -229,9 +229,9 @@ SYSTEM_PROMPT_START
 <the system prompt>
 SYSTEM_PROMPT_END
 - After outputting a system prompt, ask if the researcher wants to refine it further.
-- Never generate a generic placeholder — wait for real domain information.`;   
+- Never generate a generic placeholder — wait for real domain information.`;
 
-try {
+      try {
         const response = await router.runMultiTurn(
           model,
           messages,
@@ -444,7 +444,7 @@ try {
         let notebook;
         let discussions;
 
-const configPath = path.join(context.globalStorageUri.fsPath, "config.json");
+        const configPath = path.join(context.globalStorageUri.fsPath, "config.json");
         const importConfig = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : {};
         const trustAllImports = importConfig.trustAllImports === true;
 
@@ -467,7 +467,7 @@ const configPath = path.join(context.globalStorageUri.fsPath, "config.json");
             "Cancel"
           );
           if (choice !== "Import unsigned") return;
-          notebook = notebookStore.importNotebook(data);
+          notebook = notebookStore.importNotebook(isSigned ? data.payload : data);
         }
 
         discussions = notebookStore.getDiscussionsForNotebook(notebook.id);
