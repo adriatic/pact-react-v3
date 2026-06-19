@@ -159,7 +159,7 @@ export class LLMRouter {
 
     const stream = await this.claude!.messages.stream({
       model: resolvedModel,
-      max_tokens: 2000,
+      max_tokens: 8000,
       system: systemPrompt,
       messages: [{ role: "user", content }],
     });
