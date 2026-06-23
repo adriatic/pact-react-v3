@@ -102,7 +102,11 @@ async runPrompt(
 
       const notebookSystemPrompt = await this.getSystemPrompt(discussionId);
 
-      const systemPrompt = [userSystemPrompt, notebookSystemPrompt]
+      const tocInstruction = cellType !== "tutorial"
+        ? "Always begin your response with a Table of Contents that lists all major sections and subsections, using the exact headings that appear in the document body."
+        : null;
+
+      const systemPrompt = [userSystemPrompt, notebookSystemPrompt, tocInstruction]
         .filter(Boolean)
         .join("\n\n") || undefined;
 
