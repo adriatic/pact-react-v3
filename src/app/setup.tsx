@@ -10,6 +10,8 @@ export type SetupData = {
   openaiApiKey: string;
 };
 
+export type ExecutionMode = "table of content" | "interactive";
+
 type Tab = "keys" | "profile" | "notebook";
 
 type SetupProps = {
@@ -24,6 +26,8 @@ type SetupProps = {
   iprPending?: boolean;
   iprLastResponse?: string;
   iprError?: string;
+  onSaveExecutionMode?: (mode: ExecutionMode) => void;
+  onSaveResearchQuestion?: (question: string) => void;
 };
 
 export default function Setup({
@@ -38,6 +42,8 @@ export default function Setup({
   iprPending = false,
   iprLastResponse,
   iprError,
+  onSaveExecutionMode,
+  onSaveResearchQuestion,
 }: SetupProps) {
 
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
@@ -58,6 +64,8 @@ export default function Setup({
   );
 
   const [iprInput, setIprInput] = useState("");
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("table of content");
+  const [researchQuestion, setResearchQuestion] = useState("");
 
   // Sync incoming LLM response into local message history
   React.useEffect(() => {
@@ -108,6 +116,16 @@ export default function Setup({
     flash();
   }
 
+  function handleSaveExecutionMode() {
+    onSaveExecutionMode?.(executionMode);
+    flash();
+  }
+
+  function handleSaveResearchQuestion() {
+    onSaveResearchQuestion?.(researchQuestion);
+    flash();
+  }
+
   function flash() {
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
@@ -145,7 +163,7 @@ export default function Setup({
   const tabs: { id: Tab; label: string }[] = [
     { id: "keys", label: "Keys" },
     { id: "profile", label: "Profile" },
-    { id: "notebook", label: "Notebook" },
+    { id: "notebook", label: "Execution mode" },
   ];
 
   return (
@@ -324,6 +342,53 @@ export default function Setup({
         {/* ── Notebook tab ── */}
         {activeTab === "notebook" && (
           <>
+            {/* Execution mode selector */}
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Execution mode</label>
+              <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
+                {(["table of content", "interactive"] as ExecutionMode[]).map(m => (
+                  <label key={m} style={{ display: "flex", alignItems: "center", gap: 6, color: "#ccc", fontSize: "0.85em", cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="executionMode"
+                      checked={executionMode === m}
+                      onChange={() => setExecutionMode(m)}
+                    />
+                    {m === "table of content" ? "Table of content" : "Interactive"}
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+                {saved && <span style={{ color: "#1D9E75", fontSize: "0.8em" }}>✓ Saved</span>}
+                <button onClick={handleSaveExecutionMode} style={{
+                  background: "#0e639c", border: "none", borderRadius: 4,
+                  color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
+                }}>Save</button>
+              </div>
+            </div>
+
+            {/* Research question */}
+            <div style={fieldStyle}>
+              <label style={labelStyle}>
+                Research question{" "}
+                <span style={{ color: "#555" }}>(pre-populates the prompt composer)</span>
+              </label>
+              <textarea
+                style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, minHeight: 60 }}
+                value={researchQuestion}
+                onChange={e => setResearchQuestion(e.target.value)}
+                placeholder="e.g. What are the cardiovascular effects of..."
+                rows={3}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center", marginTop: 8 }}>
+                {saved && <span style={{ color: "#1D9E75", fontSize: "0.8em" }}>✓ Saved</span>}
+                <button onClick={handleSaveResearchQuestion} style={{
+                  background: "#0e639c", border: "none", borderRadius: 4,
+                  color: "#fff", cursor: "pointer", padding: "7px 24px", fontSize: "0.9em",
+                }}>Save</button>
+              </div>
+            </div>
+
             {/* IPR Chat */}
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>

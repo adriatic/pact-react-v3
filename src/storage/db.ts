@@ -139,6 +139,19 @@ const migrations: Migration[] = [
     description: "Add ipr_messages to notebooks for IPR chat persistence",
     sql: `ALTER TABLE notebooks ADD COLUMN ipr_messages TEXT`,
   },
+  {
+    version: 10,
+    description: "Add xm_state to notebooks for XM session persistence",
+    sql: `ALTER TABLE notebooks ADD COLUMN xm_state TEXT`,
+  },
+  {
+    version: 11,
+    description: "Add execution_mode and ipr_research_question to notebooks",
+    sql: `
+      ALTER TABLE notebooks ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'xm';
+      ALTER TABLE notebooks ADD COLUMN ipr_research_question TEXT;
+    `,
+  },
 ];
 
 function getSchemaVersion(database: DatabaseSync): number {

@@ -247,6 +247,27 @@ SYSTEM_PROMPT_END
       return;
     }
 
+    if (message.type === "SAVE_EXECUTION_MODE") {
+      notebookStore.saveExecutionMode(message.notebookId, message.mode);
+      panel.webview.postMessage({ type: "executionModeSaved", notebookId: message.notebookId, mode: message.mode });
+      return;
+    }
+
+    if (message.type === "GET_EXECUTION_MODE") {
+      const mode = notebookStore.getExecutionMode(message.notebookId);
+      const researchQuestion = notebookStore.getIprResearchQuestion(message.notebookId);
+      panel.webview.postMessage({ type: "executionModeLoaded", notebookId: message.notebookId, mode, researchQuestion });
+      return;
+    }
+
+    if (message.type === "SAVE_IPR_RESEARCH_QUESTION") {
+      notebookStore.saveIprResearchQuestion(message.notebookId, message.question);
+      return;
+    }
+
+
+
+
     try {
       // ── Execution ────────────────────────────────────────────────────────
 
@@ -276,6 +297,22 @@ SYSTEM_PROMPT_END
         await engine.retryCell(message.cellId, message.model);
       }
 
+      if (message.type === "CONTINUE_RUN") {
+        await engine.continueRun(
+          message.selectedSections,
+          message.cellId,
+          message.toc,
+          message.model ?? "claude",
+          message.resolvedModel,
+          message.discussionId,
+          userSystemPrompt,
+        );
+      }
+
+      if (message.type === "ABORT_RUN") {
+        engine.abortRun();
+      }
+
       // ── Explorer ─────────────────────────────────────────────────────────
 
       if (message.type === "EXPLORER_LOAD") {
@@ -290,6 +327,16 @@ SYSTEM_PROMPT_END
           notebooks,
           discussions: allDiscussions,
         });
+
+        // Delay restore so webview listener is registered before events arrive
+        setTimeout(() => {
+          for (const nb of notebooks) {
+            const xmState = notebookStore.getXmState(nb.id);
+            if (xmState) {
+              engine.restoreXmState(nb.id);
+            }
+          }
+        }, 500);
       }
 
       if (message.type === "CREATE_NOTEBOOK") {
