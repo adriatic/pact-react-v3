@@ -4,7 +4,7 @@ import type { Notebook, Discussion } from "./Explorer";
 
 type ExplorerMessage =
     | { type: "notebooksLoaded"; notebooks: Notebook[]; discussions: Discussion[] }
-    | { type: "notebookCreated"; notebook: Notebook }
+    | { type: "notebookCreated"; notebook: Notebook; discussions?: Discussion[] }
     | { type: "discussionCreated"; discussion: Discussion }
     | { type: "discussionDeleted"; discussionId: string }
     | { type: "notebookDeleted"; notebookId: string }
@@ -36,9 +36,25 @@ export function useExplorer(vscode: any) {
                     setDiscussions(data.discussions);
                     break;
 
-                case "notebookCreated":
+                case "notebookCreated": {
                     setNotebooks(prev => [...prev, data.notebook]);
+                    setActiveNotebookId(data.notebook.id);
+
+                    const newDiscussions = data.discussions ?? [];
+                    if (newDiscussions.length > 0) {
+                        setDiscussions(prev => [...prev, ...newDiscussions]);
+                        // Index-mode notebooks arrive with exactly one seed discussion —
+                        // auto-select it, mirroring what a manual Explorer click does,
+                        // so the composer pre-populates without any user action.
+                        const seed = newDiscussions[0];
+                        setActiveDiscussionId(seed.id);
+                        vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: seed.id });
+                    }
+                    // Interactive-mode notebooks arrive with zero discussions —
+                    // notebook is selected, but no discussion is auto-selected,
+                    // leaving the user to create their own first discussion.
                     break;
+                }
 
                 case "discussionCreated":
                     setDiscussions(prev => [...prev, data.discussion]);

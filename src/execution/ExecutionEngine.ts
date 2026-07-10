@@ -78,9 +78,9 @@ export class ExecutionEngine {
     return this.notebookStore.getNotebookIdForDiscussion(discussionId);
   }
 
-  private getExecutionMode(discussionId: string): "express" | "xm" {
+  private getExecutionMode(discussionId: string): "interactive" | "index" {
     const notebookId = this.getNotebookId(discussionId);
-    if (!notebookId) return "xm";
+    if (!notebookId) return "index";
     return this.notebookStore.getExecutionMode(notebookId);
   }
 
@@ -312,9 +312,9 @@ export class ExecutionEngine {
 
       const notebookSystemPrompt = await this.getSystemPrompt(discussionId);
 
-      // XM mode: inject ToC instruction and sentinel detection
-      // Express mode: run straight through, no ToC interception
-      const tocInstruction = (cellType !== "tutorial" && executionMode === "xm")
+      // Index mode: inject ToC instruction and sentinel detection
+      // Interactive mode: run straight through, no ToC interception
+      const tocInstruction = (cellType !== "tutorial" && executionMode === "index")
         ? "Always begin your response with a concise Table of Contents listing only the major top-level sections (not subsections), numbered, one per line. Use the exact headings that will appear in the document body. Immediately after the last ToC entry, output the exact line ===TOC_END=== on its own line, with nothing else on that line. Then continue with the full report without pausing, asking for confirmation, or waiting for a response. Do not add any transitional summaries, forward references, \"document control\" sections, or any text explaining what sections come next — end each section cleanly with its own content only."
         : null;
 
@@ -338,8 +338,8 @@ export class ExecutionEngine {
             image?.base64, image?.mimeType, parentId, discussionId);
         }
 
-      } else if (executionMode === "xm") {
-        // ── XM mode: sentinel-based ToC detection ────────────────────────
+      } else if (executionMode === "index") {
+        // ── Index mode: sentinel-based ToC detection ─────────────────────
         const abortController = new AbortController();
         const TOC_END_MARKER = "===TOC_END===";
         let tocBuffer = "";
@@ -398,7 +398,7 @@ export class ExecutionEngine {
         }
 
       } else {
-        // ── Express mode: run straight through, no ToC interception ──────
+        // ── Interactive mode: run straight through, no ToC interception ──
         let full = "";
         const result = await this.router.run(model, prompt, (token) => {
           full += token;

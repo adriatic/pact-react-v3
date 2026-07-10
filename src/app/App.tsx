@@ -7,6 +7,7 @@ import Explorer from "./Explorer";
 import { useExplorer } from "./useExplorer";
 import { corePrompts } from "../prompts/core";
 import Setup, { type SetupData, type ExecutionMode } from "./setup";
+import Account from "./account";
 
 type LLMModel = "gpt" | "claude";
 type Tier = "economy" | "standard";
@@ -362,9 +363,18 @@ export default function App() {
   const [showClearResponsesConfirm, setShowClearResponsesConfirm] = useState(false);
   const [showNewNotebookDialog, setShowNewNotebookDialog] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const pendingSettingsTargetRef = useRef<"settings" | "account" | null>(null);
   const [settingsData, setSettingsData] = useState<any>(null);
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookSystemPrompt, setNewNotebookSystemPrompt] = useState("");
+  const [newNotebookExecutionMode, setNewNotebookExecutionMode] = useState<ExecutionMode>("index");
+  const [newNotebookResearchQuestion, setNewNotebookResearchQuestion] = useState("");
+  const [newNotebookIprMessages, setNewNotebookIprMessages] = useState<{ role: string; content: string }[]>([]);
+  const [newNotebookIprInput, setNewNotebookIprInput] = useState("");
+  const [newNotebookIprPending, setNewNotebookIprPending] = useState(false);
+  const [newNotebookIprError, setNewNotebookIprError] = useState<string | undefined>(undefined);
+  const pendingIprTargetRef = useRef<"settings" | "newNotebook">("settings");
   const [showSetup, setShowSetup] = useState(false);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [showXMNavWarning, setShowXMNavWarning] = useState(false);
@@ -499,8 +509,12 @@ export default function App() {
 
   function submitNewNotebook() {
     const name = newNotebookName.trim();
-    if (name) { const systemPrompt = newNotebookSystemPrompt.trim() || null; vscode.postMessage({ type: "CREATE_NOTEBOOK", name, systemPrompt }); }
-    setNewNotebookName(""); setNewNotebookSystemPrompt(""); setShowNewNotebookDialog(false);
+    if (name) {
+      const systemPrompt = newNotebookSystemPrompt.trim() || null;
+      const researchQuestion = newNotebookResearchQuestion.trim() || null;
+      vscode.postMessage({ type: "CREATE_NOTEBOOK", name, systemPrompt, executionMode: newNotebookExecutionMode, researchQuestion });
+    }
+    setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); setShowNewNotebookDialog(false);
   }
 
   function closeDiff() { setShowDiff(false); setDiffMode(false); setDiffCellA(null); setDiffCellB(null); }
@@ -633,17 +647,33 @@ export default function App() {
           break;
         case "showSetup": setShowSetup(true); break;
         case "setupComplete": setShowSetup(false); break;
-        case "configLoaded": setSettingsData(data); setShowSettings(true); break;
+        case "configLoaded":
+          setSettingsData(data);
+          if (pendingSettingsTargetRef.current === "account") setShowAccount(true); else setShowSettings(true);
+          pendingSettingsTargetRef.current = null;
+          break;
         case "systemPromptUpdated": setShowSettings(false); break;
         case "iprMessagesLoaded": setSettingsData((prev: any) => ({ ...prev, iprMessages: data.messages })); break;
         case "iprResponse":
-          setSettingsData((prev: any) => {
-            const updated = [...(prev.iprMessages ?? []), { role: "assistant", content: data.content }];
-            vscode.postMessage({ type: "SAVE_IPR_MESSAGES", notebookId: explorer.activeNotebookId, messages: updated });
-            return { ...prev, iprPending: false, iprLastResponse: data.content, iprMessages: updated };
-          });
+          if (pendingIprTargetRef.current === "newNotebook") {
+            setNewNotebookIprMessages(prev => [...prev, { role: "assistant", content: data.content }]);
+            setNewNotebookIprPending(false);
+          } else {
+            setSettingsData((prev: any) => {
+              const updated = [...(prev.iprMessages ?? []), { role: "assistant", content: data.content }];
+              vscode.postMessage({ type: "SAVE_IPR_MESSAGES", notebookId: explorer.activeNotebookId, messages: updated });
+              return { ...prev, iprPending: false, iprLastResponse: data.content, iprMessages: updated };
+            });
+          }
           break;
-        case "iprError": setSettingsData((prev: any) => ({ ...prev, iprPending: false, iprError: data.error })); break;
+        case "iprError":
+          if (pendingIprTargetRef.current === "newNotebook") {
+            setNewNotebookIprPending(false);
+            setNewNotebookIprError(data.error);
+          } else {
+            setSettingsData((prev: any) => ({ ...prev, iprPending: false, iprError: data.error }));
+          }
+          break;
 
         case "xmTocReady":
           setIsRunning(false);
@@ -797,23 +827,15 @@ export default function App() {
   if (showSettings && settingsData) {
     return (
       <Setup
-        initialData={settingsData} defaultTab="keys" isFirstRun={false}
+        initialData={settingsData}
         onClose={() => setShowSettings(false)}
-        onSave={(data: SetupData) => { vscode.postMessage({ type: "SAVE_CONFIG", name: data.name, email: data.email, context: data.context, anthropicApiKey: data.anthropicApiKey, openaiApiKey: data.openaiApiKey }); setShowSettings(false); }}
         onUpdateSystemPrompt={(systemPrompt: string) => { vscode.postMessage({ type: "UPDATE_SYSTEM_PROMPT", notebookId: explorer.activeNotebookId, systemPrompt }); }}
         onIprSend={(messages) => {
+          pendingIprTargetRef.current = "settings";
           setSettingsData((prev: any) => ({ ...prev, iprPending: true, iprError: undefined }));
           vscode.postMessage({ type: "IPR_REFINE", messages, model, resolvedModel: MODEL_TIERS[tier][model] });
         }}
         onIprSaveMessages={(messages) => { vscode.postMessage({ type: "SAVE_IPR_MESSAGES", notebookId: explorer.activeNotebookId, messages }); }}
-        onSaveExecutionMode={(mode: ExecutionMode) => {
-          vscode.postMessage({ type: "SAVE_EXECUTION_MODE", notebookId: explorer.activeNotebookId, mode });
-        }}
-        onSaveResearchQuestion={(question: string) => {
-          vscode.postMessage({ type: "SAVE_IPR_RESEARCH_QUESTION", notebookId: explorer.activeNotebookId, question });
-          // Pre-populate composer with the research question
-          if (question) populateComposer(question);
-        }}
         iprPending={settingsData.iprPending ?? false} iprLastResponse={settingsData.iprLastResponse} iprError={settingsData.iprError}
       />
     );
@@ -821,9 +843,22 @@ export default function App() {
 
   if (showSetup) {
     return (
-      <Setup onSave={(data: SetupData) => {
+      <Account isFirstRun onSave={(data: SetupData) => {
         vscode.postMessage({ type: "SAVE_CONFIG", name: data.name, email: data.email, context: data.context, anthropicApiKey: data.anthropicApiKey, openaiApiKey: data.openaiApiKey });
       }} />
+    );
+  }
+
+  if (showAccount && settingsData) {
+    return (
+      <Account
+        initialData={settingsData}
+        onClose={() => setShowAccount(false)}
+        onSave={(data: SetupData) => {
+          vscode.postMessage({ type: "SAVE_CONFIG", name: data.name, email: data.email, context: data.context, anthropicApiKey: data.anthropicApiKey, openaiApiKey: data.openaiApiKey });
+          setShowAccount(false);
+        }}
+      />
     );
   }
 
@@ -878,15 +913,135 @@ export default function App() {
             <div style={{ marginBottom: 12, color: "#d4d4d4", fontSize: "0.95em", fontWeight: "bold" }}>New Notebook</div>
             <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>Name</div>
             <input ref={newNotebookInputRef} value={newNotebookName} onChange={e => setNewNotebookName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); } }}
+              onKeyDown={e => { if (e.key === "Escape") { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); } }}
               placeholder="Notebook name..."
               style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 14, boxSizing: "border-box" }} />
+            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>Execution mode</div>
+            <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+              {(["index", "interactive"] as ExecutionMode[]).map(m => (
+                <label key={m} style={{ display: "flex", alignItems: "center", gap: 6, color: "#ccc", fontSize: "0.85em", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="newNotebookExecutionMode"
+                    checked={newNotebookExecutionMode === m}
+                    onChange={() => setNewNotebookExecutionMode(m)}
+                  />
+                  {m === "index" ? "Index" : "Interactive"}
+                </label>
+              ))}
+            </div>
+            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+              Research question <span style={{ color: "#555" }}>(pre-populates the prompt composer)</span>
+            </div>
+            <textarea value={newNotebookResearchQuestion} onChange={e => setNewNotebookResearchQuestion(e.target.value)}
+              placeholder="e.g. What are the cardiovascular effects of..." rows={3}
+              style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
+
+            {/* IPR Chat */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+                Refine with AI{" "}
+                <span style={{ color: "#555" }}>(describe your domain and let PACT help craft the system prompt)</span>
+              </div>
+
+              {newNotebookIprMessages.length > 0 && (
+                <div style={{
+                  background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                  padding: "8px 10px", marginBottom: 8, maxHeight: 200, overflowY: "auto",
+                  fontSize: "0.82em", lineHeight: 1.6,
+                }}>
+                  {newNotebookIprMessages.map((m, i) => {
+                    const displayContent = m.content
+                      .replace(/SYSTEM_PROMPT_START[\s\S]*?SYSTEM_PROMPT_END/g, "")
+                      .trim();
+                    if (!displayContent) return null;
+                    return (
+                      <div key={i} style={{ marginBottom: 8 }}>
+                        <span style={{ color: m.role === "user" ? "#4ec94e" : "#888", fontWeight: "bold" }}>
+                          {m.role === "user" ? "You" : "PACT"}
+                        </span>
+                        <span style={{ color: "#bbb", marginLeft: 8, whiteSpace: "pre-wrap" }}>{displayContent}</span>
+                      </div>
+                    );
+                  })}
+                  {newNotebookIprPending && (
+                    <div style={{ color: "#555", fontStyle: "italic" }}>PACT is thinking...</div>
+                  )}
+                  {newNotebookIprError && (
+                    <div style={{ color: "#e05252", fontSize: "0.85em" }}>{newNotebookIprError}</div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <textarea
+                  style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "7px 10px", fontSize: "0.9em", boxSizing: "border-box", fontFamily: "monospace", resize: "none", flex: 1, minHeight: 44, lineHeight: 1.5 }}
+                  value={newNotebookIprInput}
+                  onChange={e => setNewNotebookIprInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
+                      const trimmed = newNotebookIprInput.trim();
+                      const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
+                      setNewNotebookIprMessages(updated);
+                      setNewNotebookResearchQuestion(trimmed);
+                      setNewNotebookIprInput("");
+                      pendingIprTargetRef.current = "newNotebook";
+                      setNewNotebookIprPending(true);
+                      setNewNotebookIprError(undefined);
+                      vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
+                    }
+                  }}
+                  placeholder="Describe your research domain... (Enter to send)"
+                  rows={2}
+                />
+                <button
+                  onClick={() => {
+                    if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
+                    const trimmed = newNotebookIprInput.trim();
+                    const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
+                    setNewNotebookIprMessages(updated);
+                    setNewNotebookResearchQuestion(trimmed);
+                    setNewNotebookIprInput("");
+                    pendingIprTargetRef.current = "newNotebook";
+                    setNewNotebookIprPending(true);
+                    setNewNotebookIprError(undefined);
+                    vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
+                  }}
+                  style={{
+                    background: "#0e639c", border: "none", borderRadius: 4,
+                    color: "#fff", cursor: "pointer", padding: "0 14px", fontSize: "0.85em",
+                    alignSelf: "stretch",
+                  }}
+                >→</button>
+              </div>
+
+              {newNotebookIprMessages.some(m => m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")) && (
+                <button
+                  onClick={() => {
+                    const last = [...newNotebookIprMessages].reverse().find(m =>
+                      m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")
+                    );
+                    if (last) {
+                      const match = last.content.match(/SYSTEM_PROMPT_START\n?([\s\S]*?)\nSYSTEM_PROMPT_END/);
+                      if (match) setNewNotebookSystemPrompt(match[1].trim());
+                    }
+                  }}
+                  style={{
+                    marginTop: 6, background: "#1D9E75", border: "none", borderRadius: 4,
+                    color: "#fff", cursor: "pointer", padding: "4px 14px", fontSize: "0.82em",
+                  }}
+                >↓ Use this prompt</button>
+              )}
+            </div>
+
             <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>System Prompt <span style={{ color: "#555" }}>(optional)</span></div>
             <textarea value={newNotebookSystemPrompt} onChange={e => setNewNotebookSystemPrompt(e.target.value)}
               placeholder="e.g. You are a clinical pharmacist specializing in drug interactions..." rows={5}
               style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); }} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Cancel</button>
+              <button onClick={() => { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); }} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Cancel</button>
               <button onClick={submitNewNotebook} style={{ background: "#0e639c", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Create</button>
             </div>
           </div>
@@ -937,13 +1092,15 @@ export default function App() {
           {explorer.activeDiscussionId && (
             <button onClick={() => setShowClearResponsesConfirm(true)} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Clear Responses</button>
           )}
-          <button onClick={() => setShowNewNotebookDialog(true)} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>+ Notebook</button>
+          <button onClick={() => setShowNewNotebookDialog(true)} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>New Notebook</button>
           <button onClick={explorer.importNotebook} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Import</button>
           {diffMode && (
             <button onClick={() => { setDiffMode(false); setDiffCellA(null); }} style={{ background: "none", border: "1px solid #e05252", borderRadius: 4, color: "#e05252", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Cancel Diff</button>
           )}
-          <button onClick={() => { vscode.postMessage({ type: "GET_CONFIG", notebookId: explorer.activeNotebookId ?? null }); }}
+          <button onClick={() => { pendingSettingsTargetRef.current = "settings"; vscode.postMessage({ type: "GET_CONFIG", notebookId: explorer.activeNotebookId ?? null }); }}
             style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Settings</button>
+          <button onClick={() => { pendingSettingsTargetRef.current = "account"; vscode.postMessage({ type: "GET_CONFIG", notebookId: explorer.activeNotebookId ?? null }); }}
+            style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Account</button>
           <button onClick={() => !isRunning && setTierOpen(true)}
             style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: isRunning ? "#444" : "#888", cursor: isRunning ? "default" : "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Model</button>
 

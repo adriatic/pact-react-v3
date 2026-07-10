@@ -340,8 +340,49 @@ SYSTEM_PROMPT_END
       }
 
       if (message.type === "CREATE_NOTEBOOK") {
-        const notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null);
-        panel.webview.postMessage({ type: "notebookCreated", notebook });
+        const mode = message.executionMode === "interactive" ? "interactive" : "index";
+        let notebook;
+
+        if (mode === "index") {
+          // Index-mode notebooks are constructed exactly like an imported .pact file:
+          // one notebook, one seed discussion, one prompt-bearing cell — built in
+          // memory and imported invisibly, reusing the same importNotebook() path
+          // that a real emailed .pact file goes through. Unsigned for now, per plan.
+          const now = Date.now();
+          const seedDiscussionId = "seed-discussion";
+          const seedCellId = "seed-cell";
+
+          notebook = notebookStore.importNotebook({
+            version: 1,
+            exportedAt: now,
+            notebook: {
+              name: message.name,
+              systemPrompt: message.systemPrompt ?? null,
+              executionMode: "index",
+            },
+            discussions: [
+              { id: seedDiscussionId, name: "Research Question", createdAt: now, totalTimeMs: 0 },
+            ],
+            cells: [
+              {
+                id: seedCellId,
+                discussionId: seedDiscussionId,
+                parentId: null,
+                promptText: message.researchQuestion ?? "",
+                response: "",
+                model: "claude",
+                cellType: "user",
+                createdAt: now,
+              },
+            ],
+          });
+        } else {
+          notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null);
+          notebookStore.saveExecutionMode(notebook.id, "interactive");
+        }
+
+        const discussions = notebookStore.getDiscussionsForNotebook(notebook.id);
+        panel.webview.postMessage({ type: "notebookCreated", notebook, discussions });
       }
 
       if (message.type === "CREATE_DISCUSSION") {

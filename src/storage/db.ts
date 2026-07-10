@@ -152,6 +152,14 @@ const migrations: Migration[] = [
       ALTER TABLE notebooks ADD COLUMN ipr_research_question TEXT;
     `,
   },
+  {
+    version: 12,
+    description: "Rename execution_mode values: xm -> index, express -> interactive",
+    sql: `
+      UPDATE notebooks SET execution_mode = 'index' WHERE execution_mode = 'xm';
+      UPDATE notebooks SET execution_mode = 'interactive' WHERE execution_mode = 'express';
+    `,
+  },
 ];
 
 function getSchemaVersion(database: DatabaseSync): number {

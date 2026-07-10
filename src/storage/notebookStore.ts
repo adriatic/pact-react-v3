@@ -3,7 +3,7 @@ import { getDb } from "./db";
 
 const SIGN_SERVER = process.env.PACT_SIGN_SERVER ?? "https://sign.pactresearch.net";
 
-export type ExecutionMode = "express" | "xm";
+export type ExecutionMode = "index" | "interactive";
 
 export type Notebook = {
   id: string;
@@ -89,7 +89,7 @@ export class NotebookStore {
       name: r.name,
       isSystem: r.is_system === 1,
       createdAt: r.created_at,
-      executionMode: (r.execution_mode ?? "xm") as ExecutionMode,
+      executionMode: (r.execution_mode ?? "index") as ExecutionMode,
     }));
   }
 
@@ -99,9 +99,9 @@ export class NotebookStore {
     const createdAt = Date.now();
     db.prepare(`
       INSERT INTO notebooks (id, name, is_system, created_at, system_prompt, execution_mode)
-      VALUES (?, ?, 0, ?, ?, 'xm')
+      VALUES (?, ?, 0, ?, ?, 'index')
     `).run(id, name, createdAt, systemPrompt);
-    return { id, name, isSystem: false, createdAt, executionMode: "xm" };
+    return { id, name, isSystem: false, createdAt, executionMode: "index" };
   }
 
   // ── Execution Mode ────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ export class NotebookStore {
     const row = db
       .prepare("SELECT execution_mode FROM notebooks WHERE id = ?")
       .get(notebookId) as { execution_mode: string | null } | undefined;
-    return (row?.execution_mode ?? "xm") as ExecutionMode;
+    return (row?.execution_mode ?? "index") as ExecutionMode;
   }
 
   saveExecutionMode(notebookId: string, mode: ExecutionMode): void {
@@ -322,7 +322,7 @@ export class NotebookStore {
       notebook: {
         name: notebookRow.name,
         systemPrompt: notebookRow.system_prompt ?? null,
-        executionMode: (notebookRow.execution_mode ?? "xm") as ExecutionMode,
+        executionMode: (notebookRow.execution_mode ?? "index") as ExecutionMode,
       },
       discussions: discussionRows.map((d: any) => ({ id: d.id, name: d.name, createdAt: d.created_at, totalTimeMs: d.total_time_ms })),
       cells: cellRows.map((c: any) => ({
@@ -388,8 +388,8 @@ export class NotebookStore {
     const db = getDb(this.extensionPath);
     const notebookId = `notebook-${Date.now()}`;
     const createdAt = Date.now();
-    // Imported notebooks from app.pactresearch.net default to Express mode
-    const executionMode: ExecutionMode = data.notebook.executionMode ?? "express";
+    // Imported notebooks from app.pactresearch.net default to Interactive mode
+    const executionMode: ExecutionMode = data.notebook.executionMode ?? "interactive";
 
     db.prepare(`
       INSERT INTO notebooks (id, name, is_system, created_at, system_prompt, execution_mode)
