@@ -18,6 +18,7 @@ const MODEL_TIERS: Record<Tier, Record<LLMModel, string>> = {
 };
 
 type CellEvent =
+  | { type: "notebookDeleted"; notebookId: string }
   | { type: "cellStarted"; cellId: string; parentId?: string; label?: string; cellType?: string; promptText?: string; model?: string }
   | { type: "cellStream"; cellId: string; chunk: string }
   | { type: "cellCompleted"; cellId: string; elapsedMs: number }
@@ -33,8 +34,8 @@ type CellEvent =
   | { type: "iprMessagesLoaded"; notebookId: string; messages: { role: string; content: string }[] }
   | { type: "iprResponse"; content: string }
   | { type: "iprError"; error: string }
-  | { type: "xmTocReady"; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string }
-  | { type: "xmStateRestored"; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string };
+  | { type: "xmTocReady"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string }
+  | { type: "xmStateRestored"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string };
 
 type Cell = {
   id: string;
@@ -58,6 +59,13 @@ type XMState = {
   completedSections: number[];
   activeCellId: string | null;
   discussionId: string | null;
+};
+
+const EMPTY_XM_STATE: XMState = {
+  toc: [],
+  completedSections: [],
+  activeCellId: null,
+  discussionId: null,
 };
 
 declare const acquireVsCodeApi: any;
@@ -391,12 +399,7 @@ export default function App() {
   const xmElapsedMsRef = useRef(0);
 
   const [showXM, setShowXM] = useState(false);
-  const [xmState, setXmState] = useState<XMState>({
-    toc: [],
-    completedSections: [],
-    activeCellId: null,
-    discussionId: null,
-  });
+  const [xmStateMap, setXmStateMap] = useState<Record<string, XMState>>({});
 
   const explorer = useExplorer(vscode);
   const [explorerWidth, setExplorerWidth] = useState(220);
@@ -416,10 +419,15 @@ export default function App() {
 
   // Block navigation only when XM is active AND the user is trying to leave the XM discussion
   // Navigating INTO the XM discussion (or from no discussion) is always allowed
-  const xmActive = xmState.toc.length > 0 && !!explorer.activeDiscussionId && explorer.activeDiscussionId !== xmState.discussionId;
-  const xmButtonActive = xmState.toc.length > 0 && !isRunning;
+  const activeXmState = (explorer.activeNotebookId && xmStateMap[explorer.activeNotebookId]) || EMPTY_XM_STATE;
+  const xmActive = activeXmState.toc.length > 0 && !!explorer.activeDiscussionId && explorer.activeDiscussionId !== activeXmState.discussionId;
+  const xmButtonActive = activeXmState.toc.length > 0 && !isRunning;
 
   const activeNotebookName = explorer.notebooks.find(n => n.id === explorer.activeNotebookId)?.name ?? "this notebook";
+  const activeExecutionMode = explorer.notebooks.find(n => n.id === explorer.activeNotebookId)?.executionMode;
+  // The Index button only appears at all for Index-mode notebooks — not shown
+  // (not grayed out) for Interactive notebooks, since it has nothing to do there.
+  const xmButtonVisible = activeExecutionMode === "index";
 
   useEffect(() => {
     if (cellScrollRef.current) {
@@ -440,7 +448,7 @@ export default function App() {
   // Guard: block navigation away from the XM discussion
   // Allow navigation INTO the XM discussion (resume after restart)
   function guardedSelectDiscussion(discussion: any) {
-    if (xmState.toc.length > 0 && !!explorer.activeDiscussionId && discussion.id !== xmState.discussionId) { setShowXMNavWarning(true); return; }
+    if (activeXmState.toc.length > 0 && !!explorer.activeDiscussionId && discussion.id !== activeXmState.discussionId) { setShowXMNavWarning(true); return; }
     setCells({});
     if (composerRef.current) composerRef.current.innerHTML = "";
     explorer.selectDiscussion(discussion);
@@ -452,8 +460,8 @@ export default function App() {
     vscode.postMessage({
       type: "CONTINUE_RUN",
       selectedSections,
-      cellId: xmState.activeCellId,
-      toc: xmState.toc,
+      cellId: activeXmState.activeCellId,
+      toc: activeXmState.toc,
       model,
       resolvedModel: MODEL_TIERS[tier][model],
       discussionId: explorer.activeDiscussionId,
@@ -466,22 +474,28 @@ export default function App() {
 
   function handleXMAbort() {
     setShowXM(false);
-    if (xmState.activeCellId) {
-      const completed = xmState.completedSections.length;
-      const total = xmState.toc.length;
+    if (activeXmState.activeCellId) {
+      const completed = activeXmState.completedSections.length;
+      const total = activeXmState.toc.length;
       const notice = `\n\n---\n*Stopped after ${completed} of ${total} sections.*`;
       setCells(prev => ({
         ...prev,
-        [xmState.activeCellId!]: {
-          ...prev[xmState.activeCellId!],
-          response: (prev[xmState.activeCellId!]?.response ?? "") + notice,
+        [activeXmState.activeCellId!]: {
+          ...prev[activeXmState.activeCellId!],
+          response: (prev[activeXmState.activeCellId!]?.response ?? "") + notice,
           status: "done",
           elapsedMs: xmElapsedMsRef.current,
         },
       }));
       setFinalSeconds(Math.round(xmElapsedMsRef.current / 1000));
     }
-    setXmState({ toc: [], completedSections: [], activeCellId: null, discussionId: null });
+    if (explorer.activeNotebookId) {
+      setXmStateMap(prev => {
+        const next = { ...prev };
+        delete next[explorer.activeNotebookId!];
+        return next;
+      });
+    }
     xmElapsedMsRef.current = 0;
     vscode.postMessage({ type: "ABORT_RUN", discussionId: explorer.activeDiscussionId });
   }
@@ -499,8 +513,6 @@ export default function App() {
     setCopiedCells(prev => ({ ...prev, [node.id]: true }));
     setTimeout(() => setCopiedCells(prev => ({ ...prev, [node.id]: false })), 2000);
   }
-
-  function clearView() { setCells({}); if (composerRef.current) composerRef.current.innerHTML = ""; }
 
   function clearResponses() {
     vscode.postMessage({ type: "CLEAR_RESPONSES", discussionId: explorer.activeDiscussionId });
@@ -675,14 +687,26 @@ export default function App() {
           }
           break;
 
+        case "notebookDeleted":
+          setXmStateMap(prev => {
+            if (!(data.notebookId in prev)) return prev;
+            const next = { ...prev };
+            delete next[data.notebookId];
+            return next;
+          });
+          break;
+
         case "xmTocReady":
           setIsRunning(false);
-          setXmState({
-            toc: data.toc,
-            completedSections: data.completedSections ?? [],
-            activeCellId: data.activeCellId,
-            discussionId: data.discussionId ?? null,
-          });
+          setXmStateMap(prev => ({
+            ...prev,
+            [data.notebookId]: {
+              toc: data.toc,
+              completedSections: data.completedSections ?? [],
+              activeCellId: data.activeCellId,
+              discussionId: data.discussionId ?? null,
+            },
+          }));
           setShowXM(true);
           if (data.activeCellId) {
             setCells(prev => ({
@@ -694,12 +718,15 @@ export default function App() {
 
         case "xmStateRestored":
           // Silent restore on startup — activates XM button but does not open dialog
-          setXmState({
-            toc: data.toc,
-            completedSections: data.completedSections ?? [],
-            activeCellId: data.activeCellId,
-            discussionId: data.discussionId ?? null,
-          });
+          setXmStateMap(prev => ({
+            ...prev,
+            [data.notebookId]: {
+              toc: data.toc,
+              completedSections: data.completedSections ?? [],
+              activeCellId: data.activeCellId,
+              discussionId: data.discussionId ?? null,
+            },
+          }));
           // Reload cell content immediately so continuation appends correctly
           // without requiring the user to manually navigate to the discussion first
           if (data.discussionId) {
@@ -885,9 +912,9 @@ export default function App() {
         />
       )}
 
-      {showXM && xmState.toc.length > 0 && (
+      {showXM && activeXmState.toc.length > 0 && (
         <XMPopup
-          xmState={xmState}
+          xmState={activeXmState}
           onContinue={handleXMContinue}
           onStop={handleXMStop}
           onAbort={handleXMAbort}
@@ -1088,7 +1115,6 @@ export default function App() {
 
         <div style={{ padding: "8px 16px", borderBottom: "1px solid #333", flexShrink: 0, display: "flex", alignItems: "center", gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: "1.1em" }}>PACT</h2>
-          <button onClick={clearView} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Clear</button>
           {explorer.activeDiscussionId && (
             <button onClick={() => setShowClearResponsesConfirm(true)} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Clear Responses</button>
           )}
@@ -1104,18 +1130,22 @@ export default function App() {
           <button onClick={() => !isRunning && setTierOpen(true)}
             style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: isRunning ? "#444" : "#888", cursor: isRunning ? "default" : "pointer", padding: "2px 10px", fontSize: "0.85em" }}>Model</button>
 
-          <button
-            onClick={() => xmButtonActive && setShowXM(true)}
-            title={xmButtonActive ? "Open Execution Manager" : "No ToC available"}
-            style={{
-              background: "none",
-              border: `1px solid ${xmButtonActive ? "#0e639c" : "#555"}`,
-              borderRadius: 4,
-              color: xmButtonActive ? "#0e639c" : "#555",
-              cursor: xmButtonActive ? "pointer" : "default",
-              padding: "2px 10px", fontSize: "0.85em",
-            }}
-          >XM</button>
+          {xmButtonVisible && (
+            <button
+              onClick={() => xmButtonActive && setShowXM(true)}
+              title={xmButtonActive
+                ? "Index mode: table-of-contents-driven research, executed section by section. Click to view or continue."
+                : "Index mode: table-of-contents-driven research, executed section by section. No table of contents yet — run this notebook to generate one."}
+              style={{
+                background: "none",
+                border: `1px solid ${xmButtonActive ? "#0e639c" : "#555"}`,
+                borderRadius: 4,
+                color: xmButtonActive ? "#0e639c" : "#555",
+                cursor: xmButtonActive ? "pointer" : "default",
+                padding: "2px 10px", fontSize: "0.85em",
+              }}
+            >Index</button>
+          )}
 
           <span style={{ marginLeft: "auto", color: "#555", fontSize: "0.85em" }}>v{(window as any).PACT_VERSION ?? "0.0.3"}</span>
         </div>

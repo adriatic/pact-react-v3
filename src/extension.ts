@@ -572,6 +572,15 @@ SYSTEM_PROMPT_END
           discussions: allDiscussions,
         });
 
+        // Auto-select the imported notebook and its first discussion, so the
+        // composer reflects what was just imported rather than leaving
+        // whatever discussion happened to be active before the import.
+        panel.webview.postMessage({
+          type: "notebookImported",
+          notebook,
+          discussions,
+        });
+
         vscode.window.showInformationMessage(
           `PACT: "${notebook.name}" imported successfully.`
         );

@@ -5,6 +5,7 @@ import type { Notebook, Discussion } from "./Explorer";
 type ExplorerMessage =
     | { type: "notebooksLoaded"; notebooks: Notebook[]; discussions: Discussion[] }
     | { type: "notebookCreated"; notebook: Notebook; discussions?: Discussion[] }
+    | { type: "notebookImported"; notebook: Notebook; discussions: Discussion[] }
     | { type: "discussionCreated"; discussion: Discussion }
     | { type: "discussionDeleted"; discussionId: string }
     | { type: "notebookDeleted"; notebookId: string }
@@ -53,6 +54,21 @@ export function useExplorer(vscode: any) {
                     // Interactive-mode notebooks arrive with zero discussions —
                     // notebook is selected, but no discussion is auto-selected,
                     // leaving the user to create their own first discussion.
+                    break;
+                }
+
+                case "notebookImported": {
+                    // notebooksLoaded (sent just before this) already replaced
+                    // the full notebooks/discussions lists — this only sets
+                    // which notebook/discussion should now be active, so the
+                    // composer reflects the import instead of leaving whatever
+                    // discussion happened to be active beforehand.
+                    setActiveNotebookId(data.notebook.id);
+                    if (data.discussions.length > 0) {
+                        const first = data.discussions[0];
+                        setActiveDiscussionId(first.id);
+                        vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: first.id });
+                    }
                     break;
                 }
 

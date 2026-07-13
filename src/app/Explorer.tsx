@@ -1,10 +1,12 @@
-// Copyright © 2026 PACTResearch.net. All rights reserved.\n// pactresearch.net
+// Copyright © 2026 PACTResearch.net. All rights reserved.
+// pactresearch.net
 import React, { useState, useEffect } from "react";
 
 export type Notebook = {
     id: string;
     name: string;
     isSystem: boolean;
+    executionMode?: "index" | "interactive";
 };
 
 export type Discussion = {
@@ -252,7 +254,7 @@ export default function Explorer({
                                             />
                                         </div>
                                     ) : (
-                                        !notebook.isSystem && (
+                                        !notebook.isSystem && notebook.executionMode !== "index" && (
                                             <div
                                                 onClick={e => {
                                                     e.stopPropagation();

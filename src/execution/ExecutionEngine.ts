@@ -151,6 +151,7 @@ export class ExecutionEngine {
 
     eventBus.emit({
       type: "xmStateRestored",
+      notebookId,
       toc: state.toc,
       completedSections: state.completedSections,
       activeCellId: state.activeCellId,
@@ -237,8 +238,11 @@ export class ExecutionEngine {
         this.xmDiscussionId = null;
         this.xmCellContent = "";
       } else {
+        const resolvedNotebookId = this.getNotebookId(discussionId);
+        if (!resolvedNotebookId) console.warn("PACT: xmTocReady (continueRun) — could not resolve notebookId for discussion", discussionId);
         eventBus.emit({
           type: "xmTocReady",
+          notebookId: resolvedNotebookId ?? "",
           toc: this.toc,
           completedSections: this.xmCompletedSections,
           activeCellId: cellId,
@@ -372,8 +376,11 @@ export class ExecutionEngine {
             undefined, undefined, parentId, discussionId);
           this.saveXmState(discussionId);
           console.log("PACT emitting xmTocReady:", this.toc);
+          const resolvedNotebookId = this.getNotebookId(discussionId);
+          if (!resolvedNotebookId) console.warn("PACT: xmTocReady (runPrompt) — could not resolve notebookId for discussion", discussionId);
           eventBus.emit({
             type: "xmTocReady",
+            notebookId: resolvedNotebookId ?? "",
             toc: this.toc,
             completedSections: [],
             activeCellId: cellId,

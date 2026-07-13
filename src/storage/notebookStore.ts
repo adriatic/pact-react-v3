@@ -1,7 +1,6 @@
 // Copyright © 2026 PACTResearch.net. All rights reserved.
 import { getDb } from "./db";
-
-const SIGN_SERVER = process.env.PACT_SIGN_SERVER ?? "https://sign.pactresearch.net";
+import { signPact, verifyPact } from "./pactSigning";
 
 export type ExecutionMode = "index" | "interactive";
 
@@ -337,12 +336,7 @@ export class NotebookStore {
     const pactExport = this.exportNotebook(notebookId);
     if (!pactExport) return null;
     try {
-      const response = await fetch(`${SIGN_SERVER}/sign`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pactExport),
-      });
-      if (!response.ok) throw new Error(`Sign server responded with ${response.status}`);
-      return response.json() as Promise<SignedPactExport>;
+      return signPact(pactExport);
     } catch (e: any) {
       throw new Error(`Notebook signing failed: ${e.message}`);
     }
@@ -373,12 +367,7 @@ export class NotebookStore {
 
   async verifySignature(signed: SignedPactExport): Promise<VerifyResult> {
     try {
-      const response = await fetch(`${SIGN_SERVER}/verify`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(signed),
-      });
-      if (!response.ok) return { valid: false, reason: `Verify server responded with ${response.status}` };
-      return response.json() as Promise<VerifyResult>;
+      return verifyPact(signed);
     } catch (e: any) {
       return { valid: false, reason: `Verification failed: ${e.message}` };
     }
