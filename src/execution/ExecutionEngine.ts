@@ -230,6 +230,32 @@ export class ExecutionEngine {
         eventBus.emit({ type: "cellStream", cellId, chunk: notice });
         this.saveXmCellContent(cellId, discussionId);
         eventBus.emit({ type: "cellCompleted", cellId, elapsedMs: this.xmElapsedMs });
+
+        // Persist and broadcast the final all-checked state instead of just
+        // wiping it — otherwise a fully-completed run leaves nothing for the
+        // Index button to show, and reopening it later does nothing at all.
+        const notebookId = this.xmNotebookId ?? this.getNotebookId(discussionId);
+        if (notebookId) {
+          this.notebookStore.saveXmState(notebookId, {
+            toc: this.toc,
+            completedSections: this.xmCompletedSections,
+            activeCellId: cellId,
+            discussionId,
+            elapsedMs: this.xmElapsedMs,
+            savedAt: Date.now(),
+          });
+          eventBus.emit({
+            type: "xmStateRestored",
+            notebookId,
+            toc: this.toc,
+            completedSections: this.xmCompletedSections,
+            activeCellId: cellId,
+            discussionId,
+          });
+        } else {
+          console.warn("PACT: continueRun completion — could not resolve notebookId to persist final state for", discussionId);
+        }
+
         this.xmActiveCellId = null;
         this.xmCompletedSections = [];
         this.xmElapsedMs = 0;
@@ -258,8 +284,14 @@ export class ExecutionEngine {
   }
 
   abortRun(discussionId?: string): void {
-    if (discussionId && this.xmActiveCellId) {
-      this.saveXmState(discussionId);
+    // Resolve the notebook to clear from whichever source is available:
+    // the engine's own tracking first, falling back to a lookup via the
+    // discussionId passed in (e.g. from the client's ABORT_RUN message).
+    const notebookIdToClear = this.xmNotebookId ?? (discussionId ? this.getNotebookId(discussionId) : null);
+    if (notebookIdToClear) {
+      this.notebookStore.clearXmState(notebookIdToClear);
+    } else {
+      console.warn("PACT: abortRun could not resolve a notebookId to clear persisted XM state for");
     }
     this.xmActiveCellId = null;
     this.xmCompletedSections = [];

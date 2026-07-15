@@ -310,7 +310,19 @@ SYSTEM_PROMPT_END
       }
 
       if (message.type === "ABORT_RUN") {
-        engine.abortRun();
+        engine.abortRun(message.discussionId);
+        // Abort has no meaningful "resume" today — there's no way to continue
+        // partial work, so leaving a half-finished notebook around is just
+        // confusing. Delete it entirely; the expectation is re-importing the
+        // original .pact file to start fresh, same mechanism as any other
+        // notebook deletion + import.
+        const notebookId = notebookStore.getNotebookIdForDiscussion(message.discussionId);
+        if (notebookId) {
+          notebookStore.deleteNotebook(notebookId);
+          panel.webview.postMessage({ type: "notebookDeleted", notebookId });
+        } else {
+          console.warn("PACT: ABORT_RUN could not resolve notebookId for discussion", message.discussionId);
+        }
       }
 
       // ── Explorer ─────────────────────────────────────────────────────────
@@ -347,18 +359,20 @@ SYSTEM_PROMPT_END
           // Index-mode notebooks are constructed exactly like an imported .pact file:
           // one notebook, one seed discussion, one prompt-bearing cell — built in
           // memory and imported invisibly, reusing the same importNotebook() path
-          // that a real emailed .pact file goes through. Unsigned for now, per plan.
+          // that a real emailed .pact file goes through. Unsigned — signing only
+          // matters when a .pact crosses an untrusted boundary (e.g. email); this
+          // baseline never leaves the local database.
           const now = Date.now();
           const seedDiscussionId = "seed-discussion";
           const seedCellId = "seed-cell";
 
-          notebook = notebookStore.importNotebook({
+          const originalPact = {
             version: 1,
             exportedAt: now,
             notebook: {
               name: message.name,
               systemPrompt: message.systemPrompt ?? null,
-              executionMode: "index",
+              executionMode: "index" as const,
             },
             discussions: [
               { id: seedDiscussionId, name: "Research Question", createdAt: now, totalTimeMs: 0 },
@@ -375,7 +389,13 @@ SYSTEM_PROMPT_END
                 createdAt: now,
               },
             ],
-          });
+          };
+
+          notebook = notebookStore.importNotebook(originalPact);
+          // Persist the exact same object as this notebook's reset baseline —
+          // Abort later re-runs delete + import on this, same as re-importing
+          // the original .pact file by hand would do.
+          notebookStore.saveOriginalPact(notebook.id, originalPact);
         } else {
           notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null);
           notebookStore.saveExecutionMode(notebook.id, "interactive");

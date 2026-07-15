@@ -160,6 +160,11 @@ const migrations: Migration[] = [
       UPDATE notebooks SET execution_mode = 'interactive' WHERE execution_mode = 'express';
     `,
   },
+  {
+    version: 13,
+    description: "Add original_pact column — stores the plain, unsigned baseline PactExport JSON for Index-mode notebooks, used to reset via Abort",
+    sql: `ALTER TABLE notebooks ADD COLUMN original_pact TEXT`,
+  },
 ];
 
 function getSchemaVersion(database: DatabaseSync): number {

@@ -181,10 +181,10 @@ function XMNavigationWarning({ notebookName, onDismiss }: { notebookName: string
         padding: 24, maxWidth: 380, width: "90%",
       }}>
         <div style={{ color: "#e05252", fontWeight: "bold", marginBottom: 10, fontSize: "0.95em" }}>
-          XM Session In Progress
+          Notebook Running
         </div>
         <div style={{ color: "#c8c8c8", lineHeight: 1.6, marginBottom: 20, fontSize: "0.88em" }}>
-          An XM research session is active on <strong>{notebookName}</strong>. Use <strong>Stop</strong> to pause and navigate away, or <strong>Abort</strong> to end the session before switching.
+          PACT is currently generating a response for <strong>{notebookName}</strong>. Please wait for it to finish before switching to another notebook or discussion.
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
@@ -330,14 +330,14 @@ function XMPopup({
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={onAbort}
-              title="Finish here — mark cell done, clear XM state"
+              title="Delete this notebook — there's no way to continue partial work, so re-import the original .pact file to start fresh"
               style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 14px", fontSize: "0.85em" }}
             >Abort</button>
             <button
               onClick={onStop}
-              title="Close dialog — resume later by clicking XM"
+              title="Close dialog — resume later by clicking Index"
               style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 14px", fontSize: "0.85em" }}
-            >Stop</button>
+            >Suspend</button>
             <button
               onClick={handleContinue}
               disabled={allDone}
@@ -417,10 +417,11 @@ export default function App() {
   const hasActiveDiscussion = !!explorer.activeDiscussionId;
   const isActiveTutorial = explorer.activeDiscussionId?.startsWith("discussion-tutorial-");
 
-  // Block navigation only when XM is active AND the user is trying to leave the XM discussion
-  // Navigating INTO the XM discussion (or from no discussion) is always allowed
+  // Block navigation only while a run is actively streaming right now.
+  // A notebook merely sitting suspended (toc.length > 0, not running) poses
+  // no risk — PACT only ever runs one thing at a time, so switching away
+  // from a suspended notebook to browse or run any other notebook is safe.
   const activeXmState = (explorer.activeNotebookId && xmStateMap[explorer.activeNotebookId]) || EMPTY_XM_STATE;
-  const xmActive = activeXmState.toc.length > 0 && !!explorer.activeDiscussionId && explorer.activeDiscussionId !== activeXmState.discussionId;
   const xmButtonActive = activeXmState.toc.length > 0 && !isRunning;
 
   const activeNotebookName = explorer.notebooks.find(n => n.id === explorer.activeNotebookId)?.name ?? "this notebook";
@@ -448,7 +449,7 @@ export default function App() {
   // Guard: block navigation away from the XM discussion
   // Allow navigation INTO the XM discussion (resume after restart)
   function guardedSelectDiscussion(discussion: any) {
-    if (activeXmState.toc.length > 0 && !!explorer.activeDiscussionId && discussion.id !== activeXmState.discussionId) { setShowXMNavWarning(true); return; }
+    if (isRunning) { setShowXMNavWarning(true); return; }
     setCells({});
     if (composerRef.current) composerRef.current.innerHTML = "";
     explorer.selectDiscussion(discussion);
@@ -474,28 +475,13 @@ export default function App() {
 
   function handleXMAbort() {
     setShowXM(false);
-    if (activeXmState.activeCellId) {
-      const completed = activeXmState.completedSections.length;
-      const total = activeXmState.toc.length;
-      const notice = `\n\n---\n*Stopped after ${completed} of ${total} sections.*`;
-      setCells(prev => ({
-        ...prev,
-        [activeXmState.activeCellId!]: {
-          ...prev[activeXmState.activeCellId!],
-          response: (prev[activeXmState.activeCellId!]?.response ?? "") + notice,
-          status: "done",
-          elapsedMs: xmElapsedMsRef.current,
-        },
-      }));
-      setFinalSeconds(Math.round(xmElapsedMsRef.current / 1000));
-    }
-    if (explorer.activeNotebookId) {
-      setXmStateMap(prev => {
-        const next = { ...prev };
-        delete next[explorer.activeNotebookId!];
-        return next;
-      });
-    }
+    // Abort deletes the notebook entirely (no meaningful way to continue
+    // partial work today) — clear the local view immediately for instant
+    // feedback; the host's notebookDeleted broadcast (sent in response to
+    // ABORT_RUN) will clean up the notebook/discussion lists and xmStateMap
+    // via the same handlers already used for manual deletion.
+    setCells({});
+    if (composerRef.current) composerRef.current.innerHTML = "";
     xmElapsedMsRef.current = 0;
     vscode.postMessage({ type: "ABORT_RUN", discussionId: explorer.activeDiscussionId });
   }
