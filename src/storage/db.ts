@@ -165,6 +165,11 @@ const migrations: Migration[] = [
     description: "Add original_pact column — stores the plain, unsigned baseline PactExport JSON for Index-mode notebooks, used to reset via Abort",
     sql: `ALTER TABLE notebooks ADD COLUMN original_pact TEXT`,
   },
+  {
+    version: 14,
+    description: "Add category column — one of 'personal-research' | 'samples' | 'dev-tests' | 'user-requests', set once at creation and carried through export/import. Legacy notebooks left NULL rather than guessed.",
+    sql: `ALTER TABLE notebooks ADD COLUMN category TEXT`,
+  },
 ];
 
 function getSchemaVersion(database: DatabaseSync): number {

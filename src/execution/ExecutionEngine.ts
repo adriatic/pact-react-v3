@@ -403,8 +403,16 @@ export class ExecutionEngine {
           this.xmElapsedMs = Date.now() - startTime;
           this.xmNotebookId = this.getNotebookId(discussionId);
           this.xmDiscussionId = discussionId;
-          this.xmCellContent = full;
-          this.store.save(cellId, prompt, full, model, "user",
+          // Persist only what comes after the ToC + sentinel marker — the raw
+          // planning list is already shown via the XM popup's checkboxes, and
+          // the cell's stored content is eventually what gets delivered to
+          // customers as a PDF, so it must never contain this internal artifact.
+          const markerIndex = full.indexOf(TOC_END_MARKER);
+          const cleanedContent = markerIndex !== -1
+            ? full.slice(markerIndex + TOC_END_MARKER.length).replace(/^\s+/, "")
+            : full;
+          this.xmCellContent = cleanedContent;
+          this.store.save(cellId, prompt, cleanedContent, model, "user",
             undefined, undefined, parentId, discussionId);
           this.saveXmState(discussionId);
           console.log("PACT emitting xmTocReady:", this.toc);

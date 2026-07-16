@@ -697,7 +697,12 @@ export default function App() {
           if (data.activeCellId) {
             setCells(prev => ({
               ...prev,
-              [data.activeCellId]: { ...prev[data.activeCellId], status: "paused" },
+              // response reset to "" — the client independently built up the
+              // raw ToC+marker text from live-streamed tokens before this
+              // event fired; that text is now correctly stripped server-side
+              // (nothing's actually been written yet at this point), so the
+              // client's stale local copy needs the same reset.
+              [data.activeCellId]: { ...prev[data.activeCellId], status: "paused", response: "" },
             }));
           }
           break;
