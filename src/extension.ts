@@ -9,6 +9,58 @@ import { corePrompts } from "./prompts/core";
 import { NotebookStore } from "./storage/notebookStore";
 import type { SerializedContentBlock } from "./types/contentBlock";
 
+// ── PACT-Exports vault helpers ──────────────────────────────────────────────
+// Local to pact-react-v3 — deliberately NOT reusing pactresearch-next's
+// generateShortSlug() (2-stopword-filtered-word notebook naming). That
+// function's output is lossy and often unrecognizable as the original
+// question; this slugifier instead keeps a genuine, readable fragment of
+// the actual research question text.
+
+const PACT_EXPORTS_ROOT = "/Users/nikolajivancic/pact/PACT-Exports";
+
+function slugify(text: string, maxLen: number = 60): string {
+  const cleaned = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
+  if (!cleaned) return "untitled";
+  if (cleaned.length <= maxLen) return cleaned;
+
+  // Truncate at a word boundary rather than mid-word
+  const truncated = cleaned.slice(0, maxLen);
+  const lastDash = truncated.lastIndexOf("-");
+  const result = lastDash > 0 ? truncated.slice(0, lastDash) : truncated;
+  return result || "untitled";
+}
+
+function formatDateTimeLabel(timestamp: number): string {
+  const d = new Date(timestamp);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `${date}_${time}`;
+}
+
+// Resolves the category subfolder under PACT-Exports/. Legacy notebooks with
+// no category (created before Migration 14) fall back to "uncategorized"
+// rather than blocking export. "user-requests" notebooks route through a
+// stopgap "unknown-email" subfolder — customer_email doesn't exist as a
+// field yet (deferred, spans both pact-react-v3 and pactresearch-next); this
+// path is presently unreachable from the New Notebook dialog anyway, since
+// that UI never sends "user-requests" — only relevant once the web-app
+// import path is redesigned to carry a real category through.
+function resolveCategoryDir(category: string | undefined): string {
+  if (category === "personal-research" || category === "samples" || category === "dev-tests") {
+    return path.join(PACT_EXPORTS_ROOT, category);
+  }
+  if (category === "user-requests") {
+    return path.join(PACT_EXPORTS_ROOT, "user-requests", "unknown-email");
+  }
+  return path.join(PACT_EXPORTS_ROOT, "uncategorized");
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const { version } = JSON.parse(
     fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf-8")
@@ -452,7 +504,7 @@ SYSTEM_PROMPT_END
         notebookStore.deleteDraft(message.discussionId);
       }
 
-      // ── Export (signed) ──────────────────────────────────────────────────
+      // ── Export (signed, writes directly into the PACT-Exports vault) ──────
 
       if (message.type === "EXPORT_NOTEBOOK") {
         const data = notebookStore.exportNotebook(message.notebookId);
@@ -468,21 +520,23 @@ SYSTEM_PROMPT_END
           return;
         }
 
-        const notebooksDir = path.join(require("os").homedir(), "Documents", "PACT", "notebooks");
-        if (!fs.existsSync(notebooksDir)) fs.mkdirSync(notebooksDir, { recursive: true });
+        // Slug source: the seed cell's promptText for Index-mode notebooks
+        // (cells[] is ordered by created_at ASC, so cells[0] is the earliest —
+        // the seed cell — for any notebook built via the CREATE_NOTEBOOK /
+        // original_pact path). Interactive-mode notebooks may have no
+        // research question at all, so fall back to the notebook name.
+        const slugSourceText = data.notebook.executionMode === "index" && data.cells.length > 0
+          ? data.cells[0].promptText
+          : data.notebook.name;
+        const slug = slugify(slugSourceText || data.notebook.name);
 
-        const saveUri = await vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file(
-            path.join(
-              require("os").homedir(),
-              "Documents", "PACT", "notebooks",
-              `${data.notebook.name.replace(/\s+/g, "_")}.pact`
-            ),
-          ),
-          filters: { "PACT Notebook": ["pact"] },
-        });
+        const dateTimeLabel = formatDateTimeLabel(Date.now());
+        const categoryDir = resolveCategoryDir(data.notebook.category);
+        const targetDir = path.join(categoryDir, `${dateTimeLabel}_${slug}`);
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-        if (!saveUri) return;
+        const safeName = data.notebook.name.replace(/\s+/g, "_");
+        const targetPath = path.join(targetDir, `${safeName}.pact`);
 
         // Sign the notebook before saving
         try {
@@ -492,9 +546,9 @@ SYSTEM_PROMPT_END
             vscode.window.showErrorMessage("PACT: failed to sign notebook.");
             return;
           }
-          fs.writeFileSync(saveUri.fsPath, JSON.stringify(signed, null, 2), "utf-8");
+          fs.writeFileSync(targetPath, JSON.stringify(signed, null, 2), "utf-8");
           vscode.window.showInformationMessage(
-            `PACT: "${data.notebook.name}" exported and signed successfully.`
+            `PACT: "${data.notebook.name}" exported and signed to ${targetPath}`
           );
         } catch (signErr: any) {
           // If signing server is unreachable, offer unsigned export as fallback
@@ -504,9 +558,9 @@ SYSTEM_PROMPT_END
             "Cancel"
           );
           if (choice === "Export unsigned") {
-            fs.writeFileSync(saveUri.fsPath, JSON.stringify(data, null, 2), "utf-8");
+            fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), "utf-8");
             vscode.window.showWarningMessage(
-              `PACT: "${data.notebook.name}" exported WITHOUT signature.`
+              `PACT: "${data.notebook.name}" exported WITHOUT signature to ${targetPath}`
             );
           }
         }
