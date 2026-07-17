@@ -353,6 +353,11 @@ SYSTEM_PROMPT_END
 
       if (message.type === "CREATE_NOTEBOOK") {
         const mode = message.executionMode === "interactive" ? "interactive" : "index";
+        // category arrives from the New Notebook dialog's radio group — only
+        // ever "personal-research" | "samples" | "dev-tests" from that UI.
+        // "user-requests" is never sent from here; it's reserved for notebooks
+        // constructed by the web app import path.
+        const category = message.category ?? undefined;
         let notebook;
 
         if (mode === "index") {
@@ -373,6 +378,7 @@ SYSTEM_PROMPT_END
               name: message.name,
               systemPrompt: message.systemPrompt ?? null,
               executionMode: "index" as const,
+              ...(category ? { category } : {}),
             },
             discussions: [
               { id: seedDiscussionId, name: "Research Question", createdAt: now, totalTimeMs: 0 },
@@ -397,7 +403,7 @@ SYSTEM_PROMPT_END
           // the original .pact file by hand would do.
           notebookStore.saveOriginalPact(notebook.id, originalPact);
         } else {
-          notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null);
+          notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null, category);
           notebookStore.saveExecutionMode(notebook.id, "interactive");
         }
 

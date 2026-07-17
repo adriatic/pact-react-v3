@@ -12,6 +12,12 @@ import Account from "./account";
 type LLMModel = "gpt" | "claude";
 type Tier = "economy" | "standard";
 
+// Mirrors NotebookCategory in notebookStore.ts (host side). "user-requests"
+// is intentionally excluded here — that value is reserved exclusively for
+// notebooks arriving from the web app (app.pactresearch.net); it is never a
+// manually selectable option in this dialog.
+type NotebookCategory = "personal-research" | "samples" | "dev-tests";
+
 const MODEL_TIERS: Record<Tier, Record<LLMModel, string>> = {
   economy: { gpt: "gpt-4.1-mini", claude: "claude-haiku-4-5-20251001" },
   standard: { gpt: "gpt-4.1", claude: "claude-sonnet-4-6" },
@@ -377,6 +383,7 @@ export default function App() {
   const [newNotebookName, setNewNotebookName] = useState("");
   const [newNotebookSystemPrompt, setNewNotebookSystemPrompt] = useState("");
   const [newNotebookExecutionMode, setNewNotebookExecutionMode] = useState<ExecutionMode>("index");
+  const [newNotebookCategory, setNewNotebookCategory] = useState<NotebookCategory>("personal-research");
   const [newNotebookResearchQuestion, setNewNotebookResearchQuestion] = useState("");
   const [newNotebookIprMessages, setNewNotebookIprMessages] = useState<{ role: string; content: string }[]>([]);
   const [newNotebookIprInput, setNewNotebookIprInput] = useState("");
@@ -505,14 +512,33 @@ export default function App() {
     setShowClearResponsesConfirm(false);
   }
 
+  function resetNewNotebookDialogState() {
+    setNewNotebookName("");
+    setNewNotebookSystemPrompt("");
+    setNewNotebookExecutionMode("index");
+    setNewNotebookCategory("personal-research");
+    setNewNotebookResearchQuestion("");
+    setNewNotebookIprMessages([]);
+    setNewNotebookIprInput("");
+    setNewNotebookIprError(undefined);
+  }
+
   function submitNewNotebook() {
     const name = newNotebookName.trim();
     if (name) {
       const systemPrompt = newNotebookSystemPrompt.trim() || null;
       const researchQuestion = newNotebookResearchQuestion.trim() || null;
-      vscode.postMessage({ type: "CREATE_NOTEBOOK", name, systemPrompt, executionMode: newNotebookExecutionMode, researchQuestion });
+      vscode.postMessage({
+        type: "CREATE_NOTEBOOK",
+        name,
+        systemPrompt,
+        executionMode: newNotebookExecutionMode,
+        category: newNotebookCategory,
+        researchQuestion,
+      });
     }
-    setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); setShowNewNotebookDialog(false);
+    resetNewNotebookDialogState();
+    setShowNewNotebookDialog(false);
   }
 
   function closeDiff() { setShowDiff(false); setDiffMode(false); setDiffCellA(null); setDiffCellB(null); }
@@ -931,7 +957,7 @@ export default function App() {
             <div style={{ marginBottom: 12, color: "#d4d4d4", fontSize: "0.95em", fontWeight: "bold" }}>New Notebook</div>
             <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>Name</div>
             <input ref={newNotebookInputRef} value={newNotebookName} onChange={e => setNewNotebookName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Escape") { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); } }}
+              onKeyDown={e => { if (e.key === "Escape") { setShowNewNotebookDialog(false); resetNewNotebookDialogState(); } }}
               placeholder="Notebook name..."
               style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 14, boxSizing: "border-box" }} />
             <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>Execution mode</div>
@@ -945,6 +971,26 @@ export default function App() {
                     onChange={() => setNewNotebookExecutionMode(m)}
                   />
                   {m === "index" ? "Index" : "Interactive"}
+                </label>
+              ))}
+            </div>
+            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+              Category
+            </div>
+            <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+              {([
+                { value: "personal-research", label: "Personal Research" },
+                { value: "samples", label: "Samples" },
+                { value: "dev-tests", label: "Dev Test" },
+              ] as { value: NotebookCategory; label: string }[]).map(opt => (
+                <label key={opt.value} style={{ display: "flex", alignItems: "center", gap: 6, color: "#ccc", fontSize: "0.85em", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="newNotebookCategory"
+                    checked={newNotebookCategory === opt.value}
+                    onChange={() => setNewNotebookCategory(opt.value)}
+                  />
+                  {opt.label}
                 </label>
               ))}
             </div>
@@ -1059,7 +1105,7 @@ export default function App() {
               placeholder="e.g. You are a clinical pharmacist specializing in drug interactions..." rows={5}
               style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => { setShowNewNotebookDialog(false); setNewNotebookName(""); setNewNotebookSystemPrompt(""); setNewNotebookExecutionMode("index"); setNewNotebookResearchQuestion(""); setNewNotebookIprMessages([]); setNewNotebookIprInput(""); setNewNotebookIprError(undefined); }} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Cancel</button>
+              <button onClick={() => { setShowNewNotebookDialog(false); resetNewNotebookDialogState(); }} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Cancel</button>
               <button onClick={submitNewNotebook} style={{ background: "#0e639c", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Create</button>
             </div>
           </div>
