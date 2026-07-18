@@ -153,12 +153,6 @@ export default function Explorer({
                                                         onMouseEnter={e => (e.currentTarget.style.background = "#2a2a2a")}
                                                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                                                     >↑ Export .pact</div>
-                                                    <div
-                                                        onClick={e => { e.stopPropagation(); onExportObsidian(notebook.id); setExportMenuId(null); }}
-                                                        style={{ padding: "6px 14px", cursor: "pointer", color: "#a78bfa", fontSize: "0.9em" }}
-                                                        onMouseEnter={e => (e.currentTarget.style.background = "#2a2a2a")}
-                                                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                                                    >↑ Export Obsidian</div>
                                                 </div>
                                             )}
                                         </div>

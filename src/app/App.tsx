@@ -25,6 +25,7 @@ const MODEL_TIERS: Record<Tier, Record<LLMModel, string>> = {
 
 type CellEvent =
   | { type: "notebookDeleted"; notebookId: string }
+  | { type: "notebookReset"; notebook: { id: string }; discussions: any[] }
   | { type: "cellStarted"; cellId: string; parentId?: string; label?: string; cellType?: string; promptText?: string; model?: string }
   | { type: "cellStream"; cellId: string; chunk: string }
   | { type: "cellCompleted"; cellId: string; elapsedMs: number }
@@ -336,7 +337,7 @@ function XMPopup({
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={onAbort}
-              title="Delete this notebook — there's no way to continue partial work, so re-import the original .pact file to start fresh"
+              title="Reset this notebook to its just-created state — research data is cleared, but the notebook itself and its setup remain"
               style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 14px", fontSize: "0.85em" }}
             >Abort</button>
             <button
@@ -482,11 +483,11 @@ export default function App() {
 
   function handleXMAbort() {
     setShowXM(false);
-    // Abort deletes the notebook entirely (no meaningful way to continue
-    // partial work today) — clear the local view immediately for instant
-    // feedback; the host's notebookDeleted broadcast (sent in response to
-    // ABORT_RUN) will clean up the notebook/discussion lists and xmStateMap
-    // via the same handlers already used for manual deletion.
+    // Abort resets the notebook in place (same notebookId, research data
+    // cleared, back to just-created state) rather than deleting it — clear
+    // the local view immediately for instant feedback; the host's
+    // notebookReset broadcast (sent in response to ABORT_RUN) will replace
+    // discussions/xmStateMap with the freshly reset ones once it arrives.
     setCells({});
     if (composerRef.current) composerRef.current.innerHTML = "";
     xmElapsedMsRef.current = 0;
@@ -704,6 +705,22 @@ export default function App() {
             if (!(data.notebookId in prev)) return prev;
             const next = { ...prev };
             delete next[data.notebookId];
+            return next;
+          });
+          break;
+
+        case "notebookReset":
+          // Abort: research data was wiped and rebuilt from original_pact,
+          // same notebookId. The stale ToC/completedSections entry for this
+          // notebook no longer corresponds to anything real — drop it so the
+          // Index button correctly reads as "no ToC yet" rather than showing
+          // leftover progress from the run that was just aborted. useExplorer's
+          // own notebookReset handler takes care of selecting the new seed
+          // discussion and loading its cells.
+          setXmStateMap(prev => {
+            if (!(data.notebook.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[data.notebook.id];
             return next;
           });
           break;

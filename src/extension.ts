@@ -363,15 +363,30 @@ SYSTEM_PROMPT_END
 
       if (message.type === "ABORT_RUN") {
         engine.abortRun(message.discussionId);
-        // Abort has no meaningful "resume" today — there's no way to continue
-        // partial work, so leaving a half-finished notebook around is just
-        // confusing. Delete it entirely; the expectation is re-importing the
-        // original .pact file to start fresh, same mechanism as any other
-        // notebook deletion + import.
+        // Abort resets the notebook in place to its just-created state,
+        // using its own original_pact baseline — same notebookId preserved,
+        // research data cleared. This is deliberately NOT the same as
+        // deleting the notebook: Delete removes the row entirely and relies
+        // on future Obsidian re-import to bring it back; Abort keeps the
+        // row and rewinds it, since continuation support (both PACT-side
+        // and web-client) will need a stable notebookId to attach to.
         const notebookId = notebookStore.getNotebookIdForDiscussion(message.discussionId);
         if (notebookId) {
-          notebookStore.deleteNotebook(notebookId);
-          panel.webview.postMessage({ type: "notebookDeleted", notebookId });
+          const notebook = notebookStore.resetNotebookFromOriginal(notebookId);
+          if (notebook) {
+            const discussions = notebookStore.getDiscussionsForNotebook(notebookId);
+            panel.webview.postMessage({ type: "notebookReset", notebook, discussions });
+          } else {
+            // No original_pact baseline to reset from — shouldn't happen for
+            // any notebook actually reachable via Abort today (the Index
+            // button, and therefore Abort, only ever appears for Index-mode
+            // notebooks, which always get a baseline at creation), but fall
+            // back to the old delete behavior rather than leaving the
+            // notebook in a broken half-reset state.
+            console.warn("PACT: ABORT_RUN — no original_pact baseline for notebook", notebookId, "falling back to delete");
+            notebookStore.deleteNotebook(notebookId);
+            panel.webview.postMessage({ type: "notebookDeleted", notebookId });
+          }
         } else {
           console.warn("PACT: ABORT_RUN could not resolve notebookId for discussion", message.discussionId);
         }

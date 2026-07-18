@@ -155,6 +155,77 @@ export class NotebookStore {
     try { return JSON.parse(row.original_pact) as PactExport; } catch { return null; }
   }
 
+  // Resets a notebook in place to its just-created state, using its own
+  // stored original_pact baseline as the source. Used by Abort: unlike
+  // deleteNotebook(), the notebook's own row (id, category, original_pact,
+  // system_prompt) is left untouched — only its discussions/responses/xmState
+  // are wiped and rebuilt from the baseline. Preserving the same notebookId
+  // matters for future continuation support (both PACT-side and web-client),
+  // which needs a stable identity to attach to across resets.
+  //
+  // IMPORTANT: original_pact's own discussion/cell ids (e.g. "seed-discussion",
+  // "seed-cell") are hardcoded literals shared across every Index-mode
+  // notebook's baseline — they are NOT safe to insert directly, since
+  // discussions.id and responses.prompt_id are global primary keys, not
+  // scoped per notebook. Resetting must mint fresh unique ids at reset time,
+  // the same way importNotebook() does for a brand-new notebook — just
+  // targeting this existing notebookId instead of minting a new one.
+  resetNotebookFromOriginal(notebookId: string): Notebook | null {
+    const db = getDb(this.extensionPath);
+    const originalPact = this.getOriginalPact(notebookId);
+    if (!originalPact) return null;
+
+    // Wipe this notebook's existing discussions + responses — but not the
+    // notebooks row itself.
+    db.prepare(`
+      DELETE FROM responses WHERE discussion_id IN (
+        SELECT id FROM discussions WHERE notebook_id = ?
+      )
+    `).run(notebookId);
+    db.prepare("DELETE FROM discussions WHERE notebook_id = ?").run(notebookId);
+
+    // Re-insert discussions from the baseline under freshly minted ids.
+    const discussionIdMap: Record<string, string> = {};
+    for (const d of originalPact.discussions) {
+      const newId = `discussion-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      discussionIdMap[d.id] = newId;
+      db.prepare(`
+        INSERT INTO discussions (id, notebook_id, parent_id, name, created_at, total_time_ms)
+        VALUES (?, ?, NULL, ?, ?, ?)
+      `).run(newId, notebookId, d.name, d.createdAt, d.totalTimeMs);
+    }
+
+    // Re-insert cells from the baseline under freshly minted ids.
+    const cellIdMap: Record<string, string> = {};
+    for (const c of originalPact.cells) {
+      cellIdMap[c.id] = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    for (const c of originalPact.cells) {
+      db.prepare(`
+        INSERT INTO responses (prompt_id, prompt_text, response, model, cell_type, created_at, discussion_id, parent_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        cellIdMap[c.id], c.promptText, c.response, c.model, c.cellType,
+        c.createdAt, discussionIdMap[c.discussionId] ?? null,
+        c.parentId ? (cellIdMap[c.parentId] ?? null) : null,
+      );
+    }
+
+    this.clearXmState(notebookId);
+
+    const notebookRow = db.prepare("SELECT * FROM notebooks WHERE id = ?").get(notebookId) as any;
+    if (!notebookRow) return null;
+
+    return {
+      id: notebookRow.id,
+      name: notebookRow.name,
+      isSystem: notebookRow.is_system === 1,
+      createdAt: notebookRow.created_at,
+      executionMode: (notebookRow.execution_mode ?? "index") as ExecutionMode,
+      category: (notebookRow.category ?? undefined) as NotebookCategory | undefined,
+    };
+  }
+
   // ── Discussions ───────────────────────────────────────────────────────────
 
   getDiscussionsForNotebook(notebookId: string): Discussion[] {

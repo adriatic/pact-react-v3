@@ -6,6 +6,7 @@ type ExplorerMessage =
     | { type: "notebooksLoaded"; notebooks: Notebook[]; discussions: Discussion[] }
     | { type: "notebookCreated"; notebook: Notebook; discussions?: Discussion[] }
     | { type: "notebookImported"; notebook: Notebook; discussions: Discussion[] }
+    | { type: "notebookReset"; notebook: Notebook; discussions: Discussion[] }
     | { type: "discussionCreated"; discussion: Discussion }
     | { type: "discussionDeleted"; discussionId: string }
     | { type: "notebookDeleted"; notebookId: string }
@@ -68,6 +69,30 @@ export function useExplorer(vscode: any) {
                         const first = data.discussions[0];
                         setActiveDiscussionId(first.id);
                         vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: first.id });
+                    }
+                    break;
+                }
+
+                case "notebookReset": {
+                    // Abort: the notebook itself keeps its existing id (the row
+                    // was reset in place, not deleted/recreated), but its
+                    // discussions/cells were rebuilt under freshly minted ids —
+                    // the old discussion ids for this notebook no longer exist
+                    // in the DB, so they must be dropped from local state and
+                    // replaced with the new ones, exactly like a fresh
+                    // notebookCreated selection.
+                    setNotebooks(prev => prev.map(n => n.id === data.notebook.id ? data.notebook : n));
+                    setDiscussions(prev => [
+                        ...prev.filter(d => d.notebookId !== data.notebook.id),
+                        ...data.discussions,
+                    ]);
+                    setActiveNotebookId(data.notebook.id);
+                    if (data.discussions.length > 0) {
+                        const seed = data.discussions[0];
+                        setActiveDiscussionId(seed.id);
+                        vscode.postMessage({ type: "LOAD_DISCUSSION_CELLS", discussionId: seed.id });
+                    } else {
+                        setActiveDiscussionId(null);
                     }
                     break;
                 }
