@@ -470,8 +470,7 @@ SYSTEM_PROMPT_END
           // the original .pact file by hand would do.
           notebookStore.saveOriginalPact(notebook.id, originalPact);
         } else {
-          notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null, category);
-          notebookStore.saveExecutionMode(notebook.id, "interactive");
+          notebook = notebookStore.createNotebook(message.name, message.systemPrompt ?? null, category, "interactive");
         }
 
         const discussions = notebookStore.getDiscussionsForNotebook(notebook.id);

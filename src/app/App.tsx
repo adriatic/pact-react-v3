@@ -849,10 +849,9 @@ export default function App() {
               {node.status === "error" && node.error && <span style={{ color: "#e05252" }}>{node.error}</span>}
             </div>
           )}
-          {node.status === "done" && !diffMode && !isRaw && !isTutorial && (
+          {node.status === "done" && !diffMode && !isRaw && !isTutorial && activeExecutionMode === "index" && (
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <button onClick={() => retry(node.id)}>Retry</button>
-              <button onClick={() => startDiff(node.id)}>Diff</button>
             </div>
           )}
           {isDiffA && <div style={{ marginTop: 6, fontSize: "0.8em", color: "#0e639c" }}>Select another cell to compare →</div>}
@@ -1011,116 +1010,120 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
-              Research question <span style={{ color: "#555" }}>(pre-populates the prompt composer)</span>
-            </div>
-            <textarea value={newNotebookResearchQuestion} onChange={e => setNewNotebookResearchQuestion(e.target.value)}
-              placeholder="e.g. What are the cardiovascular effects of..." rows={3}
-              style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
+            {newNotebookExecutionMode === "index" && (
+              <>
+                <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+                  Research question <span style={{ color: "#555" }}>(pre-populates the prompt composer)</span>
+                </div>
+                <textarea value={newNotebookResearchQuestion} onChange={e => setNewNotebookResearchQuestion(e.target.value)}
+                  placeholder="e.g. What are the cardiovascular effects of..." rows={3}
+                  style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
 
-            {/* IPR Chat */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
-                Refine with AI{" "}
-                <span style={{ color: "#555" }}>(describe your domain and let PACT help craft the system prompt)</span>
-              </div>
+                {/* IPR Chat */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>
+                    Refine with AI{" "}
+                    <span style={{ color: "#555" }}>(describe your domain and let PACT help craft the system prompt)</span>
+                  </div>
 
-              {newNotebookIprMessages.length > 0 && (
-                <div style={{
-                  background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
-                  padding: "8px 10px", marginBottom: 8, maxHeight: 200, overflowY: "auto",
-                  fontSize: "0.82em", lineHeight: 1.6,
-                }}>
-                  {newNotebookIprMessages.map((m, i) => {
-                    const displayContent = m.content
-                      .replace(/SYSTEM_PROMPT_START[\s\S]*?SYSTEM_PROMPT_END/g, "")
-                      .trim();
-                    if (!displayContent) return null;
-                    return (
-                      <div key={i} style={{ marginBottom: 8 }}>
-                        <span style={{ color: m.role === "user" ? "#4ec94e" : "#888", fontWeight: "bold" }}>
-                          {m.role === "user" ? "You" : "PACT"}
-                        </span>
-                        <span style={{ color: "#bbb", marginLeft: 8, whiteSpace: "pre-wrap" }}>{displayContent}</span>
-                      </div>
-                    );
-                  })}
-                  {newNotebookIprPending && (
-                    <div style={{ color: "#555", fontStyle: "italic" }}>PACT is thinking...</div>
+                  {newNotebookIprMessages.length > 0 && (
+                    <div style={{
+                      background: "#1a1a1a", border: "1px solid #333", borderRadius: 4,
+                      padding: "8px 10px", marginBottom: 8, maxHeight: 200, overflowY: "auto",
+                      fontSize: "0.82em", lineHeight: 1.6,
+                    }}>
+                      {newNotebookIprMessages.map((m, i) => {
+                        const displayContent = m.content
+                          .replace(/SYSTEM_PROMPT_START[\s\S]*?SYSTEM_PROMPT_END/g, "")
+                          .trim();
+                        if (!displayContent) return null;
+                        return (
+                          <div key={i} style={{ marginBottom: 8 }}>
+                            <span style={{ color: m.role === "user" ? "#4ec94e" : "#888", fontWeight: "bold" }}>
+                              {m.role === "user" ? "You" : "PACT"}
+                            </span>
+                            <span style={{ color: "#bbb", marginLeft: 8, whiteSpace: "pre-wrap" }}>{displayContent}</span>
+                          </div>
+                        );
+                      })}
+                      {newNotebookIprPending && (
+                        <div style={{ color: "#555", fontStyle: "italic" }}>PACT is thinking...</div>
+                      )}
+                      {newNotebookIprError && (
+                        <div style={{ color: "#e05252", fontSize: "0.85em" }}>{newNotebookIprError}</div>
+                      )}
+                    </div>
                   )}
-                  {newNotebookIprError && (
-                    <div style={{ color: "#e05252", fontSize: "0.85em" }}>{newNotebookIprError}</div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <textarea
+                      style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "7px 10px", fontSize: "0.9em", boxSizing: "border-box", fontFamily: "monospace", resize: "none", flex: 1, minHeight: 44, lineHeight: 1.5 }}
+                      value={newNotebookIprInput}
+                      onChange={e => setNewNotebookIprInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
+                          const trimmed = newNotebookIprInput.trim();
+                          const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
+                          setNewNotebookIprMessages(updated);
+                          setNewNotebookResearchQuestion(trimmed);
+                          setNewNotebookIprInput("");
+                          pendingIprTargetRef.current = "newNotebook";
+                          setNewNotebookIprPending(true);
+                          setNewNotebookIprError(undefined);
+                          vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
+                        }
+                      }}
+                      placeholder="Describe your research domain... (Enter to send)"
+                      rows={2}
+                    />
+                    <button
+                      onClick={() => {
+                        if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
+                        const trimmed = newNotebookIprInput.trim();
+                        const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
+                        setNewNotebookIprMessages(updated);
+                        setNewNotebookResearchQuestion(trimmed);
+                        setNewNotebookIprInput("");
+                        pendingIprTargetRef.current = "newNotebook";
+                        setNewNotebookIprPending(true);
+                        setNewNotebookIprError(undefined);
+                        vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
+                      }}
+                      style={{
+                        background: "#0e639c", border: "none", borderRadius: 4,
+                        color: "#fff", cursor: "pointer", padding: "0 14px", fontSize: "0.85em",
+                        alignSelf: "stretch",
+                      }}
+                    >→</button>
+                  </div>
+
+                  {newNotebookIprMessages.some(m => m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")) && (
+                    <button
+                      onClick={() => {
+                        const last = [...newNotebookIprMessages].reverse().find(m =>
+                          m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")
+                        );
+                        if (last) {
+                          const match = last.content.match(/SYSTEM_PROMPT_START\n?([\s\S]*?)\nSYSTEM_PROMPT_END/);
+                          if (match) setNewNotebookSystemPrompt(match[1].trim());
+                        }
+                      }}
+                      style={{
+                        marginTop: 6, background: "#1D9E75", border: "none", borderRadius: 4,
+                        color: "#fff", cursor: "pointer", padding: "4px 14px", fontSize: "0.82em",
+                      }}
+                    >↓ Use this prompt</button>
                   )}
                 </div>
-              )}
 
-              <div style={{ display: "flex", gap: 8 }}>
-                <textarea
-                  style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "7px 10px", fontSize: "0.9em", boxSizing: "border-box", fontFamily: "monospace", resize: "none", flex: 1, minHeight: 44, lineHeight: 1.5 }}
-                  value={newNotebookIprInput}
-                  onChange={e => setNewNotebookIprInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
-                      const trimmed = newNotebookIprInput.trim();
-                      const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
-                      setNewNotebookIprMessages(updated);
-                      setNewNotebookResearchQuestion(trimmed);
-                      setNewNotebookIprInput("");
-                      pendingIprTargetRef.current = "newNotebook";
-                      setNewNotebookIprPending(true);
-                      setNewNotebookIprError(undefined);
-                      vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
-                    }
-                  }}
-                  placeholder="Describe your research domain... (Enter to send)"
-                  rows={2}
-                />
-                <button
-                  onClick={() => {
-                    if (!newNotebookIprInput.trim() || newNotebookIprPending) return;
-                    const trimmed = newNotebookIprInput.trim();
-                    const updated = [...newNotebookIprMessages, { role: "user", content: trimmed }];
-                    setNewNotebookIprMessages(updated);
-                    setNewNotebookResearchQuestion(trimmed);
-                    setNewNotebookIprInput("");
-                    pendingIprTargetRef.current = "newNotebook";
-                    setNewNotebookIprPending(true);
-                    setNewNotebookIprError(undefined);
-                    vscode.postMessage({ type: "IPR_REFINE", messages: updated, model, resolvedModel: MODEL_TIERS[tier][model] });
-                  }}
-                  style={{
-                    background: "#0e639c", border: "none", borderRadius: 4,
-                    color: "#fff", cursor: "pointer", padding: "0 14px", fontSize: "0.85em",
-                    alignSelf: "stretch",
-                  }}
-                >→</button>
-              </div>
-
-              {newNotebookIprMessages.some(m => m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")) && (
-                <button
-                  onClick={() => {
-                    const last = [...newNotebookIprMessages].reverse().find(m =>
-                      m.role === "assistant" && m.content.includes("SYSTEM_PROMPT_START")
-                    );
-                    if (last) {
-                      const match = last.content.match(/SYSTEM_PROMPT_START\n?([\s\S]*?)\nSYSTEM_PROMPT_END/);
-                      if (match) setNewNotebookSystemPrompt(match[1].trim());
-                    }
-                  }}
-                  style={{
-                    marginTop: 6, background: "#1D9E75", border: "none", borderRadius: 4,
-                    color: "#fff", cursor: "pointer", padding: "4px 14px", fontSize: "0.82em",
-                  }}
-                >↓ Use this prompt</button>
-              )}
-            </div>
-
-            <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>System Prompt <span style={{ color: "#555" }}>(optional)</span></div>
-            <textarea value={newNotebookSystemPrompt} onChange={e => setNewNotebookSystemPrompt(e.target.value)}
-              placeholder="e.g. You are a clinical pharmacist specializing in drug interactions..." rows={5}
-              style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
+                <div style={{ marginBottom: 6, color: "#888", fontSize: "0.8em" }}>System Prompt <span style={{ color: "#555" }}>(optional)</span></div>
+                <textarea value={newNotebookSystemPrompt} onChange={e => setNewNotebookSystemPrompt(e.target.value)}
+                  placeholder="e.g. You are a clinical pharmacist specializing in drug interactions..." rows={5}
+                  style={{ width: "100%", background: "#1e1e1e", border: "1px solid #555", borderRadius: 4, color: "#d4d4d4", padding: "6px 10px", fontSize: "0.9em", marginBottom: 16, boxSizing: "border-box", resize: "vertical", fontFamily: "monospace", lineHeight: 1.5 }} />
+              </>
+            )}
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={() => { setShowNewNotebookDialog(false); resetNewNotebookDialogState(); }} style={{ background: "none", border: "1px solid #555", borderRadius: 4, color: "#888", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Cancel</button>
               <button onClick={submitNewNotebook} style={{ background: "#0e639c", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", padding: "4px 16px", fontSize: "0.9em" }}>Create</button>

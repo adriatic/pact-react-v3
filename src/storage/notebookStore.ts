@@ -98,15 +98,15 @@ export class NotebookStore {
     }));
   }
 
-  createNotebook(name: string, systemPrompt: string | null = null, category?: NotebookCategory): Notebook {
+  createNotebook(name: string, systemPrompt: string | null = null, category?: NotebookCategory, executionMode: ExecutionMode = "index"): Notebook {
     const db = getDb(this.extensionPath);
     const id = `notebook-${Date.now()}`;
     const createdAt = Date.now();
     db.prepare(`
       INSERT INTO notebooks (id, name, is_system, created_at, system_prompt, execution_mode, category)
-      VALUES (?, ?, 0, ?, ?, 'index', ?)
-    `).run(id, name, createdAt, systemPrompt, category ?? null);
-    return { id, name, isSystem: false, createdAt, executionMode: "index", category };
+      VALUES (?, ?, 0, ?, ?, ?, ?)
+    `).run(id, name, createdAt, systemPrompt, executionMode, category ?? null);
+    return { id, name, isSystem: false, createdAt, executionMode, category };
   }
 
   // ── Execution Mode ────────────────────────────────────────────────────────
