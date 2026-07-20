@@ -7,6 +7,7 @@ import { ExecutionEngine } from "./execution/ExecutionEngine";
 import { LLMRouter } from "./llm/llmRouter";
 import { corePrompts } from "./prompts/core";
 import { NotebookStore } from "./storage/notebookStore";
+import type { PactExport } from "./storage/notebookStore";
 import type { SerializedContentBlock } from "./types/contentBlock";
 
 // ── PACT-Exports vault helpers ──────────────────────────────────────────────
@@ -43,20 +44,33 @@ function formatDateTimeLabel(timestamp: number): string {
   return `${date}_${time}`;
 }
 
+// Interim measure until a real customer_email field exists in the .pact
+// schema (spans both pact-react-v3 and pactresearch-next — deferred).
+// generatePactFile.ts embeds the customer's email in a consistent, always-
+// generated phrase inside systemPrompt: "...conducting a PACT research
+// session for {email}." Extraction is deliberately narrow (exact phrase
+// match) rather than a loose email-anywhere-in-text search, so it fails
+// safely (falls back to null) rather than accidentally matching an
+// unrelated email if one ever appears elsewhere in a system prompt.
+function extractCustomerEmail(systemPrompt: string | null): string | null {
+  if (!systemPrompt) return null;
+  const match = systemPrompt.match(
+    /conducting a PACT research session for ([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/
+  );
+  return match ? match[1] : null;
+}
+
 // Resolves the category subfolder under PACT-Exports/. Legacy notebooks with
 // no category (created before Migration 14) fall back to "uncategorized"
-// rather than blocking export. "user-requests" notebooks route through a
-// stopgap "unknown-email" subfolder — customer_email doesn't exist as a
-// field yet (deferred, spans both pact-react-v3 and pactresearch-next); this
-// path is presently unreachable from the New Notebook dialog anyway, since
-// that UI never sends "user-requests" — only relevant once the web-app
-// import path is redesigned to carry a real category through.
-function resolveCategoryDir(category: string | undefined): string {
+// rather than blocking export. "user-requests" notebooks nest under the
+// customer's email when it can be extracted from systemPrompt; otherwise
+// fall back to "unknown-email" until a real customer_email field exists.
+function resolveCategoryDir(category: string | undefined, customerEmail: string | null): string {
   if (category === "personal-research" || category === "samples" || category === "dev-tests") {
     return path.join(PACT_EXPORTS_ROOT, category);
   }
   if (category === "user-requests") {
-    return path.join(PACT_EXPORTS_ROOT, "user-requests", "unknown-email");
+    return path.join(PACT_EXPORTS_ROOT, "user-requests", customerEmail ?? "unknown-email");
   }
   return path.join(PACT_EXPORTS_ROOT, "uncategorized");
 }
@@ -545,7 +559,8 @@ SYSTEM_PROMPT_END
         const slug = slugify(slugSourceText || data.notebook.name);
 
         const dateTimeLabel = formatDateTimeLabel(Date.now());
-        const categoryDir = resolveCategoryDir(data.notebook.category);
+        const customerEmail = extractCustomerEmail(data.notebook.systemPrompt);
+        const categoryDir = resolveCategoryDir(data.notebook.category, customerEmail);
         const targetDir = path.join(categoryDir, `${dateTimeLabel}_${slug}`);
         if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
@@ -565,9 +580,12 @@ SYSTEM_PROMPT_END
             `PACT: "${data.notebook.name}" exported and signed to ${targetPath}`
           );
         } catch (signErr: any) {
-          // If signing server is unreachable, offer unsigned export as fallback
+          // Local signing failure (e.g. key generation/read error) — offer
+          // unsigned export as fallback. Signing has run entirely locally
+          // since pactSigning.ts's migration off sign.pactresearch.net;
+          // there is no server to be "unavailable" anymore.
           const choice = await vscode.window.showWarningMessage(
-            `PACT: signing server unavailable — ${signErr.message}. Export without signature?`,
+            `PACT: signing failed — ${signErr.message}. Export without signature?`,
             "Export unsigned",
             "Cancel"
           );
@@ -650,6 +668,17 @@ SYSTEM_PROMPT_END
           );
           if (choice !== "Import unsigned") return;
           notebook = notebookStore.importNotebook(isSigned ? data.payload : data);
+        }
+
+        // Persist the reset baseline for Index-mode notebooks, same as
+        // CREATE_NOTEBOOK already does — without this, Abort on a
+        // web-imported notebook has nothing to reset to and silently falls
+        // back to deleting the notebook instead. Interactive-mode notebooks
+        // have no Abort path (no Index button), so there's nothing to save
+        // for them, matching CREATE_NOTEBOOK's Interactive branch.
+        if (notebook.executionMode === "index") {
+          const originalPactPayload: PactExport = isSigned ? data.payload : data;
+          notebookStore.saveOriginalPact(notebook.id, originalPactPayload);
         }
 
         discussions = notebookStore.getDiscussionsForNotebook(notebook.id);
