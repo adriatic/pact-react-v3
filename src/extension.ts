@@ -501,7 +501,7 @@ SYSTEM_PROMPT_END
 
       if (message.type === "LOAD_DISCUSSION_CELLS") {
         const cells = notebookStore.getCellsForDiscussion(message.discussionId);
-        panel.webview.postMessage({ type: "discussionCellsLoaded", cells });
+        panel.webview.postMessage({ type: "discussionCellsLoaded", cells, discussionId: message.discussionId });
       }
 
       if (message.type === "DELETE_DISCUSSION") {

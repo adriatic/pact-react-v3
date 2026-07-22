@@ -29,7 +29,7 @@ type CellEvent =
   | { type: "cellStarted"; cellId: string; parentId?: string; label?: string; cellType?: string; promptText?: string; model?: string }
   | { type: "cellStream"; cellId: string; chunk: string }
   | { type: "cellCompleted"; cellId: string; elapsedMs: number }
-  | { type: "discussionCellsLoaded"; cells: Cell[] }
+  | { type: "discussionCellsLoaded"; cells: Cell[]; discussionId: string }
   | { type: "discussionDeleted"; discussionId: string }
   | { type: "responsesCleared" }
   | { type: "draftLoaded"; discussionId: string; promptText: string | null }
@@ -42,7 +42,7 @@ type CellEvent =
   | { type: "iprResponse"; content: string }
   | { type: "iprError"; error: string }
   | { type: "xmTocReady"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string }
-  | { type: "xmStateRestored"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string };
+  | { type: "xmStateRestored"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string; elapsedMs: number };
 
 type Cell = {
   id: string;
@@ -66,6 +66,7 @@ type XMState = {
   completedSections: number[];
   activeCellId: string | null;
   discussionId: string | null;
+  elapsedMs: number;
 };
 
 const EMPTY_XM_STATE: XMState = {
@@ -73,6 +74,7 @@ const EMPTY_XM_STATE: XMState = {
   completedSections: [],
   activeCellId: null,
   discussionId: null,
+  elapsedMs: 0,
 };
 
 declare const acquireVsCodeApi: any;
@@ -421,6 +423,35 @@ export default function App() {
   const newNotebookInputRef = useRef<HTMLInputElement>(null);
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cellScrollRef = useRef<HTMLDivElement>(null);
+  // Scoped fix for the collapse/expand losing composer content: the composer
+  // has never lived in React state — populateComposer() writes straight to
+  // the DOM — which is fine as long as the element stays mounted, but
+  // collapsing it (composerCollapsed = true) unmounts it entirely, and
+  // nothing restores the text when a fresh, empty element remounts on
+  // expand. This ref plus the effect below is a targeted patch for that one
+  // symptom; folding composer content into real, managed state properly is
+  // part of the separately-planned broader consolidation, not done here.
+  const composerTextRef = useRef<string>("");
+  // The main message-handling useEffect below has an empty dependency array
+  // (it registers the listener once), so a direct reference to
+  // explorer.activeDiscussionId inside it would be frozen at whatever it was
+  // on first render. This ref is kept current by a separate effect so the
+  // discussionCellsLoaded handler can check "is this response actually for
+  // the discussion that's active right now?" against a live value.
+  const activeDiscussionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeDiscussionIdRef.current = explorer.activeDiscussionId;
+  }, [explorer.activeDiscussionId]);
+
+  // Same staleness problem as activeDiscussionIdRef above, for the same
+  // reason (the message-handler effect below has an empty dependency
+  // array): discussionCellsLoaded needs to look up the CURRENT xmStateMap
+  // to correct a cell's DB-default status/elapsedMs, and reading xmStateMap
+  // directly there would see whatever it was on first render.
+  const xmStateMapRef = useRef<Record<string, XMState>>({});
+  useEffect(() => {
+    xmStateMapRef.current = xmStateMap;
+  }, [xmStateMap]);
 
   const hasActiveDiscussion = !!explorer.activeDiscussionId;
   const isActiveTutorial = explorer.activeDiscussionId?.startsWith("discussion-tutorial-");
@@ -438,6 +469,19 @@ export default function App() {
   // (not grayed out) for Interactive notebooks, since it has nothing to do there.
   const xmButtonVisible = activeExecutionMode === "index";
 
+  // Start (the composer's up-arrow) fires RUN_REQUESTED — a brand-new run,
+  // unrelated to CONTINUE_RUN. For an Index-mode notebook, that's only ever
+  // correct once, before any ToC exists at all. Once a ToC exists — whether
+  // actively streaming, paused/suspended, or every section marked complete —
+  // Start must stay disabled permanently; the only way forward from there is
+  // Continue inside the Index popup. There is deliberately no "finished"
+  // state that re-enables Start: even a fully completed report should still
+  // only be resumable via Continue, never restarted via Start. Only Abort
+  // (which clears the ToC back to nothing) re-enables it. Interactive-mode
+  // notebooks have no ToC concept, so they keep the simple prior rule.
+  const canStart = hasActiveDiscussion && !isActiveTutorial &&
+    !(activeExecutionMode === "index" && activeXmState.toc.length > 0);
+
   useEffect(() => {
     if (cellScrollRef.current) {
       cellScrollRef.current.scrollTop = cellScrollRef.current.scrollHeight;
@@ -446,7 +490,15 @@ export default function App() {
 
   useEffect(() => {
     if (isRunning) {
-      setRunSeconds(0); setFinalSeconds(null);
+      // Seed from what's already accumulated (xmElapsedMsRef) rather than
+      // resetting to 0 — otherwise clicking Continue on an XM run made the
+      // header briefly show only this section's own seconds, as if all
+      // prior sections' time had been discarded, before eventually correcting
+      // itself once the section finished and cellCompleted's delta got added.
+      const baselineSeconds = Math.round(xmElapsedMsRef.current / 1000);
+      runSecondsRef.current = baselineSeconds;
+      setRunSeconds(baselineSeconds);
+      setFinalSeconds(null);
       timerRef.current = setInterval(() => { runSecondsRef.current += 1; setRunSeconds(runSecondsRef.current); }, 1000);
     } else {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -545,6 +597,7 @@ export default function App() {
   function closeDiff() { setShowDiff(false); setDiffMode(false); setDiffCellA(null); setDiffCellB(null); }
 
   function populateComposer(text: string) {
+    composerTextRef.current = text;
     const el = composerRef.current; if (!el) return;
     el.innerText = text; el.focus();
     const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
@@ -562,7 +615,7 @@ export default function App() {
   }
 
   function send() {
-    if (!hasActiveDiscussion) return;
+    if (!canStart) return;
     const el = composerRef.current; if (!el) return;
     let blocks = serializeComposer(el);
     if (blocks.length === 0) { const text = el.innerText?.trim(); if (text) blocks = [{ type: "text", text }]; }
@@ -660,8 +713,39 @@ export default function App() {
           setFinalSeconds(Math.round(xmElapsedMsRef.current / 1000));
           break;
         case "discussionCellsLoaded":
-          setCells(Object.fromEntries(data.cells.map((c: Cell) => [c.id, c])));
-          if (data.cells.length > 0) { const firstRoot = data.cells.find((c: Cell) => !c.parentId); if (firstRoot?.promptText && composerRef.current) populateComposer(firstRoot.promptText); }
+          // On startup, xmStateRestored fires LOAD_DISCUSSION_CELLS for any
+          // notebook with a saved ToC, independent of whatever the tree has
+          // actually selected (the tutorial's first discussion, by default).
+          // Without this check, whichever response happens to arrive last
+          // silently overwrites the Composer/Cell view with content the user
+          // never asked to see — the tree looked like "tutorial selected"
+          // while the panel showed a different notebook entirely.
+          if (data.discussionId !== activeDiscussionIdRef.current) break;
+          {
+            const loaded = Object.fromEntries(data.cells.map((c: Cell) => [c.id, c]));
+            // notebookStore.ts's getCellsForDiscussion() hardcodes
+            // status:"done" and elapsedMs:0 for every single row it returns
+            // — the responses table has no columns for either, so the DB
+            // literally cannot know a cell is mid-XM-run or how long it's
+            // taken. Whichever notebook's tracked XM state (xmStateMapRef)
+            // says this discussion currently has a live/paused/just-finished
+            // run, correct that one cell's status/elapsedMs to the real
+            // values before committing to state. Without this, any reload
+            // triggered while an XM run is in progress (restart, or the
+            // completion broadcast) stamps the cell "done ⏱ 0.0s" regardless
+            // of its true state.
+            const xmEntry = Object.values(xmStateMapRef.current).find(s => s.discussionId === data.discussionId);
+            if (xmEntry?.activeCellId && loaded[xmEntry.activeCellId]) {
+              const allDone = xmEntry.toc.length > 0 && xmEntry.completedSections.length === xmEntry.toc.length;
+              loaded[xmEntry.activeCellId] = {
+                ...loaded[xmEntry.activeCellId],
+                status: allDone ? "done" : "paused",
+                elapsedMs: xmEntry.elapsedMs,
+              };
+            }
+            setCells(loaded);
+            if (data.cells.length > 0) { const firstRoot = data.cells.find((c: Cell) => !c.parentId); if (firstRoot?.promptText && composerRef.current) populateComposer(firstRoot.promptText); }
+          }
           break;
         case "discussionDeleted": setCells({}); if (composerRef.current) composerRef.current.innerHTML = ""; break;
         case "responsesCleared": setCells({}); break;
@@ -734,18 +818,39 @@ export default function App() {
               completedSections: data.completedSections ?? [],
               activeCellId: data.activeCellId,
               discussionId: data.discussionId ?? null,
+              // xmElapsedMsRef already holds the correct accumulated total
+              // at this point — cellCompleted (carrying this section's
+              // delta) always fires immediately before xmTocReady in the
+              // same continueRun cycle.
+              elapsedMs: xmElapsedMsRef.current,
             },
           }));
           setShowXM(true);
           if (data.activeCellId) {
+            // xmTocReady fires from two different places, and they are NOT
+            // the same situation:
+            //   1. Right after the initial ToC is generated (runPrompt) —
+            //      completedSections is empty. Nothing real has been written
+            //      yet; the client's local `response` is just the raw
+            //      ToC+marker text it built up from live-streamed tokens,
+            //      which the server has already stripped down to nothing.
+            //      Resetting to "" here is correct.
+            //   2. After continueRun() finishes a section but sections
+            //      remain — completedSections is non-empty. At this point
+            //      the cell has real, accumulated content that was already
+            //      correctly saved to SQLite by saveXmCellContent(). Wiping
+            //      `response` here was destroying that content client-side
+            //      (visible on Suspend — nothing showed until switching to
+            //      another discussion and back forced a reload from SQLite).
+            // So only wipe on the true first-ToC event.
+            const isInitialTocReady = (data.completedSections ?? []).length === 0;
             setCells(prev => ({
               ...prev,
-              // response reset to "" — the client independently built up the
-              // raw ToC+marker text from live-streamed tokens before this
-              // event fired; that text is now correctly stripped server-side
-              // (nothing's actually been written yet at this point), so the
-              // client's stale local copy needs the same reset.
-              [data.activeCellId]: { ...prev[data.activeCellId], status: "paused", response: "" },
+              [data.activeCellId]: {
+                ...prev[data.activeCellId],
+                status: "paused",
+                ...(isInitialTocReady ? { response: "" } : {}),
+              },
             }));
           }
           break;
@@ -759,8 +864,25 @@ export default function App() {
               completedSections: data.completedSections ?? [],
               activeCellId: data.activeCellId,
               discussionId: data.discussionId ?? null,
+              elapsedMs: data.elapsedMs,
             },
           }));
+          // Seed the running timer from the real historical total stored in
+          // SQLite — xmElapsedMsRef is just an in-memory counter that starts
+          // at 0 on every page load, so without this, restarting the
+          // extension host (or just reloading) made it look like all prior
+          // section time had never happened: the display would only ever
+          // show however long the NEXT section took, not the true
+          // cumulative total. This matters beyond cosmetics — this total is
+          // the basis for any future usage-based accounting.
+          xmElapsedMsRef.current = data.elapsedMs;
+          setFinalSeconds(Math.round(data.elapsedMs / 1000));
+          if (data.activeCellId) {
+            setCells(prev => ({
+              ...prev,
+              [data.activeCellId]: { ...prev[data.activeCellId], elapsedMs: data.elapsedMs },
+            }));
+          }
           // Reload cell content immediately so continuation appends correctly
           // without requiring the user to manually navigate to the discussion first
           if (data.discussionId) {
@@ -777,11 +899,21 @@ export default function App() {
     if (!explorer.activeDiscussionId?.startsWith("discussion-tutorial-")) {
       setCells({}); if (composerRef.current) composerRef.current.innerHTML = "";
       xmElapsedMsRef.current = 0;
+      setFinalSeconds(null);
       if (explorer.activeDiscussionId) vscode.postMessage({ type: "GET_DRAFT", discussionId: explorer.activeDiscussionId });
     }
   }, [explorer.activeDiscussionId]);
 
   useEffect(() => { if (showNewNotebookDialog) { setTimeout(() => newNotebookInputRef.current?.focus(), 50); } }, [showNewNotebookDialog]);
+
+  // Restore whatever was in the composer right before it was collapsed —
+  // collapsing unmounts the element entirely, so a fresh, empty one mounts
+  // on expand unless something explicitly writes the prior text back in.
+  useEffect(() => {
+    if (!composerCollapsed && composerRef.current && composerTextRef.current) {
+      populateComposer(composerTextRef.current);
+    }
+  }, [composerCollapsed]);
 
   function onDividerMouseDown(e: React.MouseEvent) {
     isDraggingDivider.current = true; dragStartX.current = e.clientX; dragStartWidth.current = explorerWidth; e.preventDefault();
@@ -1255,11 +1387,14 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <button onClick={send} title={hasActiveDiscussion && !isActiveTutorial ? "Send (Cmd+Enter)" : "Select a discussion first"}
-                        style={{ background: hasActiveDiscussion && !isActiveTutorial ? "#0e639c" : "#333", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: hasActiveDiscussion && !isActiveTutorial ? "pointer" : "default", color: hasActiveDiscussion && !isActiveTutorial ? "#fff" : "#555", fontSize: "1em", display: "flex", alignItems: "center", justifyContent: "center" }}>↑</button>
+                      <button onClick={send} title={canStart ? "Start (Cmd+Enter)" : (hasActiveDiscussion ? "Already started — use Continue in the Index popup" : "Select a discussion first")}
+                        style={{ background: canStart ? "#0e639c" : "#333", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: canStart ? "pointer" : "default", color: canStart ? "#fff" : "#555", fontSize: "1em", display: "flex", alignItems: "center", justifyContent: "center" }}>↑</button>
                       <button
                         className="composer-toggle"
-                        onClick={() => setComposerCollapsed(true)}
+                        onClick={() => {
+                          if (composerRef.current) composerTextRef.current = composerRef.current.innerText;
+                          setComposerCollapsed(true);
+                        }}
                         title="Hide prompt field"
                       >⌃</button>
                     </div>

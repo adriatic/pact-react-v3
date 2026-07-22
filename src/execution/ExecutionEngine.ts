@@ -156,6 +156,7 @@ export class ExecutionEngine {
       completedSections: state.completedSections,
       activeCellId: state.activeCellId,
       discussionId: state.discussionId,
+      elapsedMs: state.elapsedMs,
     });
   }
 
@@ -229,7 +230,13 @@ export class ExecutionEngine {
         this.xmCellContent += notice;
         eventBus.emit({ type: "cellStream", cellId, chunk: notice });
         this.saveXmCellContent(cellId, discussionId);
-        eventBus.emit({ type: "cellCompleted", cellId, elapsedMs: this.xmElapsedMs });
+        // elapsedMs here is this call's own duration (a delta), not the
+        // running total — the client accumulates every cellCompleted's
+        // elapsedMs onto its own running ref, so each event emitted during
+        // an XM run must convey only its own increment, or the client
+        // double- (or triple-) counts once intermediate stops also start
+        // emitting this event below.
+        eventBus.emit({ type: "cellCompleted", cellId, elapsedMs });
 
         // Persist and broadcast the final all-checked state instead of just
         // wiping it — otherwise a fully-completed run leaves nothing for the
@@ -251,6 +258,7 @@ export class ExecutionEngine {
             completedSections: this.xmCompletedSections,
             activeCellId: cellId,
             discussionId,
+            elapsedMs: this.xmElapsedMs,
           });
         } else {
           console.warn("PACT: continueRun completion — could not resolve notebookId to persist final state for", discussionId);
@@ -266,6 +274,14 @@ export class ExecutionEngine {
       } else {
         const resolvedNotebookId = this.getNotebookId(discussionId);
         if (!resolvedNotebookId) console.warn("PACT: xmTocReady (continueRun) — could not resolve notebookId for discussion", discussionId);
+        // Emit cellCompleted so this section's elapsed time is reflected
+        // client-side before the cell goes back to "paused" — previously
+        // this branch emitted nothing at all, so a cell's displayed time
+        // stayed blank through every intermediate Suspend, only ever
+        // showing a real number once the very last section finished.
+        // xmTocReady (emitted right after) correctly overrides status back
+        // to "paused"; only elapsedMs needs to carry over from this event.
+        eventBus.emit({ type: "cellCompleted", cellId, elapsedMs });
         eventBus.emit({
           type: "xmTocReady",
           notebookId: resolvedNotebookId ?? "",
@@ -380,21 +396,54 @@ export class ExecutionEngine {
         const TOC_END_MARKER = "===TOC_END===";
         let tocBuffer = "";
         let tocDetected = false;
+        // Set the instant the sentinel is found, BEFORE abortController.abort()
+        // is called. abort() has real network latency — a stream can keep
+        // delivering tokens for a short window after abort() is invoked. Any
+        // token callback that fires during that window must be a no-op, or
+        // stray tokens (often the start of the model's real report, restating
+        // the title) get appended into `full` and end up duplicated ahead of
+        // the actual continuation content once cleanedContent is computed below.
+        let stoppedCapturing = false;
 
         let full = "";
         const result = await this.router.run(model, prompt, (token) => {
+          if (stoppedCapturing) return;
+
+          // A single streamed `token` is not guaranteed to be small — the
+          // underlying stream can deliver a larger burst that contains the
+          // ===TOC_END=== marker AND report content that comes after it,
+          // bundled in the very same chunk. Appending the whole token to
+          // `full` unconditionally (before checking for the marker) was the
+          // real source of the duplicated/truncated title text: by the time
+          // the marker was detected, any trailing report text riding along
+          // in that same chunk had already been appended. So the marker
+          // check must happen first, and only the portion of the token
+          // BEFORE the marker (if any) may ever reach `full` — everything
+          // after it, even within the same chunk, must be discarded.
+          const bufferBeforeThisToken = tocBuffer.length;
+          tocBuffer += token;
+          const markerIndex = tocBuffer.indexOf(TOC_END_MARKER);
+
+          if (markerIndex !== -1) {
+            tocDetected = true;
+            stoppedCapturing = true;
+            this.toc = parseTocFromContent(tocBuffer.slice(0, markerIndex));
+
+            const preMarkerPortion = markerIndex > bufferBeforeThisToken
+              ? token.slice(0, markerIndex - bufferBeforeThisToken)
+              : "";
+            if (preMarkerPortion) {
+              full += preMarkerPortion;
+              eventBus.emit({ type: "cellStream", cellId, chunk: preMarkerPortion });
+            }
+
+            console.log("PACT ToC complete (sentinel), aborting stream. Sections:", this.toc.length);
+            abortController.abort();
+            return;
+          }
+
           full += token;
           eventBus.emit({ type: "cellStream", cellId, chunk: token });
-          if (!tocDetected) {
-            tocBuffer += token;
-            const markerIndex = tocBuffer.indexOf(TOC_END_MARKER);
-            if (markerIndex !== -1) {
-              tocDetected = true;
-              this.toc = parseTocFromContent(tocBuffer.slice(0, markerIndex));
-              console.log("PACT ToC complete (sentinel), aborting stream. Sections:", this.toc.length);
-              abortController.abort();
-            }
-          }
         }, blocks, systemPrompt, resolvedModel, this.toc, abortController.signal);
 
         if (result.stopReason === "toc_complete") {

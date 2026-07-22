@@ -18,7 +18,7 @@ export function useExplorer(vscode: any) {
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [discussions, setDiscussions] = useState<Discussion[]>([]);
     const [activeDiscussionId, setActiveDiscussionId] = useState<string | null>(
-        "discussion-tutorial-00"
+        null
     );
     const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
 

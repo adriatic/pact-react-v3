@@ -9,7 +9,7 @@ export type ExecutionEvent =
   | { type: "cellError"; cellId: string; error: string }
   | { type: "cellPaused"; cellId: string; stoppedAfterSection: number; totalSections: number }
   | { type: "xmTocReady"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string }
-  | { type: "xmStateRestored"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string };
+  | { type: "xmStateRestored"; notebookId: string; toc: string[]; completedSections: number[]; activeCellId: string; discussionId: string; elapsedMs: number };
 
 type Listener = (event: ExecutionEvent) => void;
 

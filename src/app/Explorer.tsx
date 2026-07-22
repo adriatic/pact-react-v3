@@ -65,6 +65,18 @@ export default function Explorer({
         setExpandedNotebooks(prev => ({ ...prev, [id]: !prev[id] }));
     }
 
+    // The active discussion is correctly set by useExplorer.ts on create,
+    // import, and Abort's reset — but nothing was expanding the notebook row
+    // that contains it, so the selection was correct in state while staying
+    // invisible behind a collapsed triangle until manually clicked open.
+    useEffect(() => {
+        if (!activeDiscussionId) return;
+        const discussion = discussions.find(d => d.id === activeDiscussionId);
+        if (discussion && !expandedNotebooks[discussion.notebookId]) {
+            setExpandedNotebooks(prev => ({ ...prev, [discussion.notebookId]: true }));
+        }
+    }, [activeDiscussionId, discussions]);
+
     function submitNewDiscussion(notebookId: string) {
         const name = newDiscussionName.trim();
         if (!name) return;
